@@ -444,7 +444,7 @@ const swapSeiAction: Action = {
         fromToken.address,
         toToken.address,
         amount,
-        process.env.SLIPPAGE_TOLERANCE || '1'
+        process.env.SEI_SLIPPAGE_TOLERANCE || '1'
       );
 
       const response = `✅ Successfully swapped ${swapResult.amountIn} ${fromToken.symbol} to ${swapResult.amountOut} ${toToken.symbol}\n\n🔗 Transaction: ${swapResult.transactionHash}`;
@@ -630,9 +630,9 @@ export const seiSwapPlugin: Plugin = {
   name: 'plugin-sei-swap',
   description: 'Provides SEI token swapping functionality using Symphony protocol with proper balance checks and approvals',
   config: {
-    PRIVATE_KEY: process.env.PRIVATE_KEY,
-    RPC_URL: process.env.RPC_URL,
-    SLIPPAGE_TOLERANCE: process.env.SLIPPAGE_TOLERANCE,
+    SEI_PRIVATE_KEY: process.env.SEI_PRIVATE_KEY,
+    SEI_RPC_URL: process.env.SEI_RPC_URL,
+    SEI_SLIPPAGE_TOLERANCE: process.env.SEI_SLIPPAGE_TOLERANCE,
   },
   async init(config: Record<string, string>) {
     logger.info('Initializing plugin-sei-swap');

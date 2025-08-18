@@ -30,8 +30,9 @@ const configSchema = z.object({
     .url()
     .default('https://sei-api.polkachu.com')
     .transform((val) => val.trim()),
-  TELEGRAM_BOT_TOKEN: z.string().min(1, 'Telegram bot token is required'),
-  TELEGRAM_CHAT_ID: z.string().min(1, 'Telegram chat ID is required'),
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_CHAT_ID: z.string().optional(),
+  DISCORD_WEBHOOK_URL: z.string().url().optional(),
   PRICE_CHECK_INTERVAL: z.number().default(60000), // 1 minute
   PROPOSAL_CHECK_INTERVAL: z.number().default(300000), // 5 minutes
 });
@@ -88,6 +89,7 @@ export class NotificationService extends Service {
   private seiRestUrl: string;
   private telegramBotToken: string;
   private telegramChatId: string;
+  private discordWebhookUrl: string;
   private priceCheckInterval: number;
   private proposalCheckInterval: number;
 
@@ -103,6 +105,7 @@ export class NotificationService extends Service {
     this.seiRestUrl = process.env.SEI_REST_URL || 'https://sei-api.polkachu.com';
     this.telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || '';
     this.telegramChatId = process.env.TELEGRAM_CHAT_ID || '';
+    this.discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL || '';
     this.priceCheckInterval = Number(process.env.PRICE_CHECK_INTERVAL) || 60000;
     this.proposalCheckInterval = Number(process.env.PROPOSAL_CHECK_INTERVAL) || 300000;
   }
@@ -328,6 +331,71 @@ export class NotificationService extends Service {
   }
 
   /**
+   * Sends a message via Discord webhook
+   */
+  async sendDiscordMessage(message: string): Promise<void> {
+    try {
+      if (!this.discordWebhookUrl) {
+        logger.warn('Discord webhook URL not configured, skipping Discord notification');
+        return;
+      }
+
+      const response = await axios.post(
+        this.discordWebhookUrl,
+        {
+          content: message,
+          username: 'Sei Mate',
+          avatar_url: 'https://elizaos.github.io/eliza-avatars/Eliza/portrait.png',
+        },
+        {
+          timeout: 10000,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (response.status !== 204) {
+        throw new Error(`Discord webhook returned status ${response.status}`);
+      }
+
+      logger.info('Discord message sent successfully');
+    } catch (error) {
+      logger.error({ error }, 'Failed to send Discord message');
+      throw error;
+    }
+  }
+
+  /**
+   * Sends notification to all configured platforms
+   */
+  async sendNotification(message: string, chatId?: string): Promise<void> {
+    const notifications: Promise<void>[] = [];
+
+    // Send to Telegram if configured
+    if (this.telegramBotToken && (chatId || this.telegramChatId)) {
+      notifications.push(this.sendTelegramMessage(message, chatId));
+    }
+
+    // Send to Discord if configured
+    if (this.discordWebhookUrl) {
+      notifications.push(this.sendDiscordMessage(message));
+    }
+
+    if (notifications.length === 0) {
+      logger.warn('No notification platforms configured');
+      return;
+    }
+
+    // Send to all platforms concurrently
+    try {
+      await Promise.allSettled(notifications);
+    } catch (error) {
+      logger.error({ error }, 'Some notifications failed to send');
+    }
+  }
+
+  /**
    * Adds a price alert
    */
   addPriceAlert(
@@ -403,7 +471,7 @@ Your alert: ${alert.condition} $${alert.targetPrice}
             // Properly escape for MarkdownV2
             const message = this.escapeMarkdownV2(unescapedMessage);
 
-            await this.sendTelegramMessage(message, alert.chatId);
+            await this.sendNotification(message, alert.chatId);
             this.priceAlerts.delete(alertId);
             logger.info(`Price alert triggered and removed: ${alertId}`);
           }
@@ -449,7 +517,7 @@ Your alert: ${alert.condition} $${alert.targetPrice}
               // Properly escape for MarkdownV2
               const message = this.escapeMarkdownV2(unescapedMessage);
 
-              await this.sendTelegramMessage(message, alert.chatId);
+              await this.sendNotification(message, alert.chatId);
             }
 
             logger.info(`New proposal notification sent: ${proposal.proposal_id}`);
@@ -766,6 +834,7 @@ export const notificationPlugin: Plugin = {
     SEI_REST_URL: process.env.SEI_REST_URL,
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
+    DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL,
     PRICE_CHECK_INTERVAL: process.env.PRICE_CHECK_INTERVAL,
     PROPOSAL_CHECK_INTERVAL: process.env.PROPOSAL_CHECK_INTERVAL,
   },

@@ -45,10 +45,10 @@ const seiMainnet = {
  * Defines the configuration schema for the SEI perpetual trading plugin
  */
 const configSchema = z.object({
-  PRIVATE_KEY: z.string().min(1, 'Private key is required'),
-  RPC_URL: z.string().url().default('https://evm-rpc.sei-apis.com'),
-  CITREX_ENVIRONMENT: z.enum(['mainnet', 'testnet']).default('mainnet'),
-  SUB_ACCOUNT_ID: z.number().default(0),
+  SEI_PRIVATE_KEY: z.string().min(1, 'SEI private key is required'),
+  SEI_RPC_URL: z.string().url().default('https://evm-rpc.sei-apis.com'),
+  SEI_CITREX_ENVIRONMENT: z.enum(['mainnet', 'testnet']).default('mainnet'),
+  SEI_SUB_ACCOUNT_ID: z.number().default(0),
 });
 
 // Import types from Citrex SDK following sei-agent-kit pattern
@@ -126,13 +126,13 @@ export class SeiPerpetualTradingService extends Service {
   constructor(runtime?: IAgentRuntime) {
     super(runtime);
     
-    this.privateKey = process.env.PRIVATE_KEY || '';
-    this.rpcUrl = process.env.RPC_URL || 'https://evm-rpc.sei-apis.com';
-    this.environment = (process.env.CITREX_ENVIRONMENT as 'mainnet' | 'testnet') || 'mainnet';
-    this.subAccountId = parseInt(process.env.SUB_ACCOUNT_ID || '0');
+    this.privateKey = process.env.SEI_PRIVATE_KEY || '';
+    this.rpcUrl = process.env.SEI_RPC_URL || 'https://evm-rpc.sei-apis.com';
+    this.environment = (process.env.SEI_CITREX_ENVIRONMENT as 'mainnet' | 'testnet') || 'mainnet';
+    this.subAccountId = parseInt(process.env.SEI_SUB_ACCOUNT_ID || '0');
     
     if (!this.privateKey) {
-      throw new Error('PRIVATE_KEY environment variable is required');
+      throw new Error('SEI_PRIVATE_KEY environment variable is required');
     }
   }
 
@@ -1004,10 +1004,10 @@ export const seiPerpetualTradingPlugin: Plugin = {
   name: 'plugin-sei-perpetual-trading',
   description: 'Provides SEI perpetual trading functionality using Citrex protocol with position management, order placement, and account monitoring',
   config: {
-    PRIVATE_KEY: process.env.PRIVATE_KEY,
-    RPC_URL: process.env.RPC_URL,
-    CITREX_ENVIRONMENT: process.env.CITREX_ENVIRONMENT,
-    SUB_ACCOUNT_ID: process.env.SUB_ACCOUNT_ID,
+    SEI_PRIVATE_KEY: process.env.SEI_PRIVATE_KEY,
+    SEI_RPC_URL: process.env.SEI_RPC_URL,
+    SEI_CITREX_ENVIRONMENT: process.env.SEI_CITREX_ENVIRONMENT,
+    SEI_SUB_ACCOUNT_ID: process.env.SEI_SUB_ACCOUNT_ID,
   },
   async init(config: Record<string, string>) {
     logger.info('Initializing plugin-sei-perpetual-trading');

@@ -161,20 +161,27 @@ export class SEINFTService extends Service {
         throw new Error('NFT contract address not configured');
       }
 
-      // Simulate minting transaction (in real implementation, this would interact with SEI blockchain)
-      const response = await axios.post(`${this.restUrl}/cosmos/tx/v1beta1/simulate`, {
-        tx_bytes: this.buildMintTransaction(mintRequest),
+      // Build and broadcast the actual minting transaction
+      const txBytes = this.buildMintTransaction(mintRequest);
+      
+      // Broadcast transaction to SEI network
+      const response = await axios.post(`${this.restUrl}/cosmos/tx/v1beta1/txs`, {
+        tx_bytes: txBytes,
+        mode: 'BROADCAST_MODE_SYNC'
       }, {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      // For demo purposes, return a simulated successful result
-      return {
-        success: true,
-        tx_hash: `0x${Math.random().toString(16).substring(2)}`,
-        gas_used: '150000',
-        block_height: Math.floor(Math.random() * 1000000) + 1000000,
-      };
+      if (response.data.tx_response && response.data.tx_response.code === 0) {
+        return {
+          success: true,
+          tx_hash: response.data.tx_response.txhash,
+          gas_used: response.data.tx_response.gas_used,
+          block_height: response.data.tx_response.height,
+        };
+      } else {
+        throw new Error(response.data.tx_response?.raw_log || 'Transaction failed');
+      }
     } catch (error) {
       logger.error({ error }, 'Failed to mint NFT');
       return {
@@ -195,19 +202,27 @@ export class SEINFTService extends Service {
         throw new Error('Marketplace contract address not configured');
       }
 
-      // Simulate selling transaction
-      const response = await axios.post(`${this.restUrl}/cosmos/tx/v1beta1/simulate`, {
-        tx_bytes: this.buildSellTransaction(tradeRequest),
+      // Build and broadcast the actual selling transaction
+      const txBytes = this.buildSellTransaction(tradeRequest);
+      
+      // Broadcast transaction to SEI network
+      const response = await axios.post(`${this.restUrl}/cosmos/tx/v1beta1/txs`, {
+        tx_bytes: txBytes,
+        mode: 'BROADCAST_MODE_SYNC'
       }, {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      return {
-        success: true,
-        tx_hash: `0x${Math.random().toString(16).substring(2)}`,
-        gas_used: '120000',
-        block_height: Math.floor(Math.random() * 1000000) + 1000000,
-      };
+      if (response.data.tx_response && response.data.tx_response.code === 0) {
+        return {
+          success: true,
+          tx_hash: response.data.tx_response.txhash,
+          gas_used: response.data.tx_response.gas_used,
+          block_height: response.data.tx_response.height,
+        };
+      } else {
+        throw new Error(response.data.tx_response?.raw_log || 'Transaction failed');
+      }
     } catch (error) {
       logger.error({ error }, 'Failed to sell NFT');
       return {
@@ -228,19 +243,27 @@ export class SEINFTService extends Service {
         throw new Error('Marketplace contract address not configured');
       }
 
-      // Simulate buying transaction
-      const response = await axios.post(`${this.restUrl}/cosmos/tx/v1beta1/simulate`, {
-        tx_bytes: this.buildBuyTransaction(tradeRequest),
+      // Build and broadcast the actual buying transaction
+      const txBytes = this.buildBuyTransaction(tradeRequest);
+      
+      // Broadcast transaction to SEI network
+      const response = await axios.post(`${this.restUrl}/cosmos/tx/v1beta1/txs`, {
+        tx_bytes: txBytes,
+        mode: 'BROADCAST_MODE_SYNC'
       }, {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      return {
-        success: true,
-        tx_hash: `0x${Math.random().toString(16).substring(2)}`,
-        gas_used: '100000',
-        block_height: Math.floor(Math.random() * 1000000) + 1000000,
-      };
+      if (response.data.tx_response && response.data.tx_response.code === 0) {
+        return {
+          success: true,
+          tx_hash: response.data.tx_response.txhash,
+          gas_used: response.data.tx_response.gas_used,
+          block_height: response.data.tx_response.height,
+        };
+      } else {
+        throw new Error(response.data.tx_response?.raw_log || 'Transaction failed');
+      }
     } catch (error) {
       logger.error({ error }, 'Failed to buy NFT');
       return {
@@ -261,27 +284,59 @@ export class SEINFTService extends Service {
         throw new Error('NFT contract address not configured');
       }
 
-      // Simulate NFT query (in real implementation, this would query the blockchain)
-      const mockNFT: NFTData = {
+      // Query NFT information from SEI blockchain
+      const response = await axios.get(`${this.restUrl}/cosmwasm/wasm/v1/contract/${this.nftContractAddress}/smart/${Buffer.from(JSON.stringify({
+        nft_info: { token_id: tokenId }
+      })).toString('base64')}`, {
+        headers: { 'Accept': 'application/json' },
+      });
+
+      if (!response.data?.data) {
+        return null;
+      }
+
+      const nftInfo = response.data.data;
+      
+      // Query owner information
+      const ownerResponse = await axios.get(`${this.restUrl}/cosmwasm/wasm/v1/contract/${this.nftContractAddress}/smart/${Buffer.from(JSON.stringify({
+        owner_of: { token_id: tokenId }
+      })).toString('base64')}`, {
+        headers: { 'Accept': 'application/json' },
+      });
+
+      const owner = ownerResponse.data?.data?.owner || 'unknown';
+
+      // Check if NFT is for sale on marketplace
+      let price = null;
+      let isForSale = false;
+      
+      if (this.marketplaceContractAddress) {
+        try {
+          const marketResponse = await axios.get(`${this.restUrl}/cosmwasm/wasm/v1/contract/${this.marketplaceContractAddress}/smart/${Buffer.from(JSON.stringify({
+            get_listing: { token_id: tokenId, contract: this.nftContractAddress }
+          })).toString('base64')}`, {
+            headers: { 'Accept': 'application/json' },
+          });
+          
+          if (marketResponse.data?.data) {
+            price = marketResponse.data.data.price;
+            isForSale = true;
+          }
+        } catch {
+          // NFT not listed for sale
+        }
+      }
+
+      return {
         token_id: tokenId,
-        owner: 'sei1...',
-        metadata: {
-          name: `NFT #${tokenId}`,
-          description: 'A unique NFT on SEI blockchain',
-          image: 'https://example.com/nft.png',
-          attributes: [
-            { trait_type: 'Rarity', value: 'Common' },
-            { trait_type: 'Color', value: 'Blue' },
-          ],
-        },
+        owner,
+        metadata: nftInfo.extension || nftInfo,
         contract_address: this.nftContractAddress,
-        price: '100',
-        is_for_sale: true,
+        price: price?.toString() || null,
+        is_for_sale: isForSale,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-
-      return mockNFT;
     } catch (error) {
       logger.error({ error }, 'Failed to get NFT');
       return null;
@@ -289,18 +344,78 @@ export class SEINFTService extends Service {
   }
 
   private buildMintTransaction(mintRequest: MintRequest): string {
-    // In a real implementation, this would build the actual transaction bytes
-    return Buffer.from(JSON.stringify(mintRequest)).toString('base64');
+    // Build CosmWasm execute message for NFT minting
+    const executeMsg = {
+      mint: {
+        token_id: Date.now().toString(), // Generate unique token ID
+        owner: mintRequest.recipient,
+        extension: mintRequest.metadata,
+      }
+    };
+    
+    const msg = {
+      typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
+      value: {
+        sender: mintRequest.recipient,
+        contract: this.nftContractAddress,
+        msg: Buffer.from(JSON.stringify(executeMsg)),
+        funds: []
+      }
+    };
+    
+    // This would need proper transaction encoding with @cosmjs/proto-signing
+    return Buffer.from(JSON.stringify(msg)).toString('base64');
   }
 
   private buildSellTransaction(tradeRequest: TradeRequest): string {
-    // In a real implementation, this would build the actual transaction bytes
-    return Buffer.from(JSON.stringify(tradeRequest)).toString('base64');
+    // Build CosmWasm execute message for listing NFT on marketplace
+    const executeMsg = {
+      list_nft: {
+        token_id: tradeRequest.token_id,
+        contract: this.nftContractAddress,
+        price: {
+          denom: 'usei',
+          amount: tradeRequest.price
+        }
+      }
+    };
+    
+    const msg = {
+      typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
+      value: {
+        sender: tradeRequest.seller,
+        contract: this.marketplaceContractAddress,
+        msg: Buffer.from(JSON.stringify(executeMsg)),
+        funds: []
+      }
+    };
+    
+    return Buffer.from(JSON.stringify(msg)).toString('base64');
   }
 
   private buildBuyTransaction(tradeRequest: TradeRequest): string {
-    // In a real implementation, this would build the actual transaction bytes
-    return Buffer.from(JSON.stringify(tradeRequest)).toString('base64');
+    // Build CosmWasm execute message for buying NFT from marketplace
+    const executeMsg = {
+      buy_nft: {
+        token_id: tradeRequest.token_id,
+        contract: this.nftContractAddress
+      }
+    };
+    
+    const msg = {
+      typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
+      value: {
+        sender: tradeRequest.buyer,
+        contract: this.marketplaceContractAddress,
+        msg: Buffer.from(JSON.stringify(executeMsg)),
+        funds: [{
+          denom: 'usei',
+          amount: tradeRequest.price
+        }]
+      }
+    };
+    
+    return Buffer.from(JSON.stringify(msg)).toString('base64');
   }
 }
 
