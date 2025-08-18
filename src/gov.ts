@@ -797,13 +797,28 @@ const getProposalsAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'Show me active SEI proposals',
+          text: 'Show me active SEI governance proposals',
         },
       },
       {
         name: '{{name2}}',
         content: {
           text: '🏛️ **SEI Governance Dashboard**\n\n📊 Found 3 active proposals:\n\n**1. Increase Block Size Limit**\n   📋 ID: #42\n   🗳️ Voting Active\n   ⏰ 5 days left',
+          actions: ['GET_SEI_PROPOSALS'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'What are the current SEI proposals?',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: '🏛️ **SEI Governance Dashboard**\n\n📊 Found 2 active proposals:\n\n**1. Network Upgrade v2.0**\n   📋 ID: #45\n   🗳️ Voting Active\n   ⏰ 3 days left',
           actions: ['GET_SEI_PROPOSALS'],
         },
       },
@@ -985,7 +1000,7 @@ const voteOnProposalAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'vote yes on proposal #42',
+          text: 'Vote yes on SEI governance proposal #42',
         },
       },
       {
@@ -1000,7 +1015,7 @@ const voteOnProposalAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'vote no with veto on #15',
+          text: 'Cast vote no with veto on proposal #15',
         },
       },
       {
@@ -1134,13 +1149,28 @@ const getValidatorsAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'Show me top 10 SEI validators',
+          text: 'Show me the top SEI validators for staking',
         },
       },
       {
         name: '{{name2}}',
         content: {
           text: '⚡ **SEI Validator Network**\n\n🏗️ Active Validators: 10\n\n**1. Figment**\n   💰 Stake: 293,385,598.08 SEI\n   💸 Commission: 5.00%',
+          actions: ['GET_SEI_VALIDATORS'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'List SEI validators with their commission rates',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: '⚡ **SEI Validator Network**\n\n🏗️ Active Validators: 15\n\n**1. Coinbase Cloud**\n   💰 Stake: 150,000,000.00 SEI\n   💸 Commission: 8.00%',
           actions: ['GET_SEI_VALIDATORS'],
         },
       },
@@ -1283,13 +1313,28 @@ const delegateTokensAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'delegate 100 SEI to seivalidator123abc',
+          text: 'Delegate 100 SEI to validator seivalidator123abc',
         },
       },
       {
         name: '{{name2}}',
         content: {
           text: '🎉 **Delegation Successful!**\n\n💰 Delegated: 100 SEI\n🏗️ Validator: seivalidator123abc\n📄 Transaction: 0xabc123...',
+          actions: ['DELEGATE_TOKENS'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'Stake 500 SEI with Figment validator',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: '🎉 **Delegation Successful!**\n\n💰 Delegated: 500 SEI\n🏗️ Validator: seivaloper1figment...\n📄 Transaction: 0xdef456...',
           actions: ['DELEGATE_TOKENS'],
         },
       },
@@ -1453,13 +1498,28 @@ const getProposalDetailsAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'Show me proposal details #42',
+          text: 'Show me details for SEI governance proposal #42',
         },
       },
       {
         name: '{{name2}}',
         content: {
           text: '📋 **Proposal #42**\n\n**Increase Block Size Limit**\n\n🗳️ Voting Active\n\n🗓️ **Voting Period**\n   End: 12/25/2024 11:59:59 PM\n   ⏰ Time Left: 5 days',
+          actions: ['GET_PROPOSAL_DETAILS'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'Get information about proposal #25',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: '📋 **Proposal #25**\n\n**Network Upgrade v2.0**\n\n✅ Passed\n\n🗓️ **Voting Period**\n   End: 12/15/2024 11:59:59 PM\n   📊 Yes: 150,000,000 SEI | No: 5,000,000 SEI',
           actions: ['GET_PROPOSAL_DETAILS'],
         },
       },
@@ -1472,8 +1532,8 @@ const getProposalDetailsAction: Action = {
  */
 const getWalletBalanceAction: Action = {
   name: 'GET_WALLET_BALANCE',
-  similes: ['BALANCE', 'WALLET_BALANCE', 'MY_BALANCE', 'CHECK_BALANCE'],
-  description: 'Check your SEI wallet balance',
+  similes: ['GOV_BALANCE', 'GOVERNANCE_BALANCE', 'STAKING_BALANCE', 'SEI_BALANCE'],
+  description: 'Check your SEI wallet balance for governance and staking activities',
 
   validate: async (
     runtime: IAgentRuntime,
@@ -1483,7 +1543,11 @@ const getWalletBalanceAction: Action = {
     if (!message.content.text) return false;
     
     const text = message.content.text.toLowerCase();
-    return text.includes('balance') || text.includes('wallet');
+    return (text.includes('governance') && text.includes('balance')) ||
+           (text.includes('staking') && text.includes('balance')) ||
+           (text.includes('sei') && text.includes('balance')) ||
+           text.includes('governance balance') ||
+           text.includes('staking balance');
   },
 
   handler: async (
@@ -1508,22 +1572,23 @@ const getWalletBalanceAction: Action = {
       const balance = await service.getWalletBalance();
       const walletAddress = service.getWalletAddress();
       
-      let response = `👛 **Wallet Balance**\n\n`;
+      let response = `🏛️ **SEI Governance Wallet Balance**\n\n`;
       response += `📍 Address: ${walletAddress}\n\n`;
       
       if (balance.length === 0) {
         response += `💰 Balance: 0 SEI\n\n`;
-        response += `ℹ️ *Your wallet appears to be empty*`;
+        response += `ℹ️ *Your governance wallet appears to be empty*`;
       } else {
-        response += `💰 **Balances:**\n`;
+        response += `💰 **Available for Governance & Staking:**\n`;
         balance.forEach((coin) => {
           if (coin.denom === 'usei') {
             const seiAmount = service.formatSeiAmount(coin.amount);
-            response += `   • ${seiAmount} SEI\n`;
+            response += `   • ${seiAmount} SEI (for voting & delegation)\n`;
           } else {
             response += `   • ${coin.amount} ${coin.denom}\n`;
           }
         });
+        response += `\n💡 *These funds can be used for governance voting and validator delegation*`;
       }
 
       if (callback) {
@@ -1561,13 +1626,28 @@ const getWalletBalanceAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'What is my wallet balance?',
+          text: 'Check my SEI governance balance',
         },
       },
       {
         name: '{{name2}}',
         content: {
-          text: '👛 **Wallet Balance**\n\n📍 Address: sei1abc123...\n\n💰 **Balances:**\n   • 1,234.56 SEI',
+          text: '🏛️ **SEI Governance Wallet Balance**\n\n📍 Address: sei1abc123...\n\n💰 **Available for Governance & Staking:**\n   • 1,234.56 SEI (for voting & delegation)\n\n💡 *These funds can be used for governance voting and validator delegation*',
+          actions: ['GET_WALLET_BALANCE'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'How much SEI do I have for staking?',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: '🏛️ **SEI Governance Wallet Balance**\n\n📍 Address: sei1abc123...\n\n💰 **Available for Governance & Staking:**\n   • 500.00 SEI (for voting & delegation)\n\n💡 *These funds can be used for governance voting and validator delegation*',
           actions: ['GET_WALLET_BALANCE'],
         },
       },

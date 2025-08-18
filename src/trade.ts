@@ -686,8 +686,8 @@ const getPositionsAction: Action = {
 
 const getAccountBalanceAction: Action = {
   name: 'GET_ACCOUNT_BALANCE',
-  similes: ['CHECK_BALANCE', 'ACCOUNT_BALANCE', 'TRADING_BALANCE', 'MARGIN_BALANCE'],
-  description: 'Gets account balance and margin information for perpetual trading',
+  similes: ['TRADING_BALANCE', 'MARGIN_BALANCE', 'PERP_BALANCE', 'TRADING_ACCOUNT_BALANCE'],
+  description: 'Gets trading account balance and margin information for perpetual trading',
 
   validate: async (
     runtime: IAgentRuntime,
@@ -697,7 +697,12 @@ const getAccountBalanceAction: Action = {
     if (!message.content.text) return false;
     
     const text = message.content.text.toLowerCase();
-    return text.includes('balance') || text.includes('margin') || text.includes('account');
+    return (text.includes('trading') && text.includes('balance')) ||
+           (text.includes('trading') && text.includes('account')) ||
+           (text.includes('perpetual') && text.includes('balance')) ||
+           (text.includes('margin') && text.includes('balance')) ||
+           text.includes('trading balance') ||
+           text.includes('perp balance');
   },
 
   handler: async (
@@ -716,11 +721,12 @@ const getAccountBalanceAction: Action = {
 
       const balance = await service.getAccountBalance();
       
-      const response = `💰 **Account Balance:**\n\n` +
-        `• Total Balance: $${balance.totalBalance.toFixed(2)}\n` +
-        `• Available: $${balance.availableBalance.toFixed(2)}\n` +
-        `• Margin Used: $${balance.marginUsed.toFixed(2)}\n` +
-        `• Unrealized PnL: ${balance.unrealizedPnl >= 0 ? '🟢' : '🔴'} $${balance.unrealizedPnl.toFixed(2)}`;
+      const response = `💰 **Trading Account Balance (Perpetual Trading):**\n\n` +
+        `• Total Balance: $${balance.totalBalance.toFixed(2)} USDC\n` +
+        `• Available: $${balance.availableBalance.toFixed(2)} USDC\n` +
+        `• Margin Used: $${balance.marginUsed.toFixed(2)} USDC\n` +
+        `• Unrealized PnL: ${balance.unrealizedPnl >= 0 ? '🟢' : '🔴'} $${balance.unrealizedPnl.toFixed(2)} USDC\n\n` +
+        `📊 *This is your dedicated perpetual trading account balance*`;
 
       if (callback) {
         await callback({
@@ -756,13 +762,28 @@ const getAccountBalanceAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'Check my account balance',
+          text: 'Check my trading account balance',
         },
       },
       {
         name: '{{name2}}',
         content: {
-          text: '💰 **Account Balance:**\n\n• Total Balance: $1000.00\n• Available: $700.00\n• Margin Used: $300.00\n• Unrealized PnL: 🟢 $50.00',
+          text: '💰 **Trading Account Balance (Perpetual Trading):**\n\n• Total Balance: $1000.00 USDC\n• Available: $700.00 USDC\n• Margin Used: $300.00 USDC\n• Unrealized PnL: 🟢 $50.00 USDC\n\n📊 *This is your dedicated perpetual trading account balance*',
+          actions: ['GET_ACCOUNT_BALANCE'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'What is my perpetual trading balance?',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: '💰 **Trading Account Balance (Perpetual Trading):**\n\n• Total Balance: $2500.00 USDC\n• Available: $1800.00 USDC\n• Margin Used: $700.00 USDC\n• Unrealized PnL: 🔴 -$25.00 USDC\n\n📊 *This is your dedicated perpetual trading account balance*',
           actions: ['GET_ACCOUNT_BALANCE'],
         },
       },

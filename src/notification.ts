@@ -482,8 +482,8 @@ Your alert: ${alert.condition} $${alert.targetPrice}
  */
 const setPriceAlertAction: Action = {
   name: 'SET_PRICE_ALERT',
-  similes: ['PRICE_ALERT', 'ALERT_PRICE', 'NOTIFY_PRICE', 'SEI_ALERT'],
-  description: 'Sets up a price alert for SEI cryptocurrency',
+  similes: ['PRICE_ALERT', 'SEI_PRICE_ALERT', 'NOTIFY_PRICE', 'PRICE_NOTIFICATION'],
+  description: 'Creates a price alert that will notify you via Telegram when SEI reaches your target price',
 
   validate: async (
     runtime: IAgentRuntime,
@@ -495,7 +495,10 @@ const setPriceAlertAction: Action = {
     const text = message.content.text.toLowerCase();
     return (
       text.includes('alert') &&
-      text.includes('sei') &&
+      (text.includes('sei') || text.includes('price')) &&
+      /\d+\.?\d*/.test(text)
+    ) || (
+      text.includes('notify') &&
       text.includes('price') &&
       /\d+\.?\d*/.test(text)
     );
@@ -586,13 +589,13 @@ const setPriceAlertAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'Alert me when SEI price reaches 0.003',
+          text: 'Alert me when SEI price reaches $0.50',
         },
       },
       {
         name: '{{name2}}',
         content: {
-          text: '✅ Price alert set successfully!\n\nI\'ll notify you when SEI goes above $0.003.\n\nAlert ID: SEI_0.003_above_1234567890',
+          text: '✅ Price alert set successfully!\n\nI\'ll notify you when SEI goes above $0.50.\n\nAlert ID: SEI_0.50_above_1234567890',
           actions: ['SET_PRICE_ALERT'],
         },
       },
@@ -601,13 +604,28 @@ const setPriceAlertAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'Notify me when SEI drops below 0.001',
+          text: 'Notify me when SEI drops below $0.30',
         },
       },
       {
         name: '{{name2}}',
         content: {
-          text: '✅ Price alert set successfully!\n\nI\'ll notify you when SEI goes below $0.001.\n\nAlert ID: SEI_0.001_below_1234567890',
+          text: '✅ Price alert set successfully!\n\nI\'ll notify you when SEI goes below $0.30.\n\nAlert ID: SEI_0.30_below_1234567890',
+          actions: ['SET_PRICE_ALERT'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'Set price alert for SEI at $1.00',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: '✅ Price alert set successfully!\n\nI\'ll notify you when SEI goes above $1.00.\n\nAlert ID: SEI_1.00_above_1234567890',
           actions: ['SET_PRICE_ALERT'],
         },
       },
@@ -620,8 +638,8 @@ const setPriceAlertAction: Action = {
  */
 const setProposalAlertAction: Action = {
   name: 'SET_PROPOSAL_ALERT',
-  similes: ['PROPOSAL_ALERT', 'ALERT_PROPOSAL', 'NOTIFY_PROPOSAL', 'GOVERNANCE_ALERT'],
-  description: 'Sets up alerts for new SEI governance proposals',
+  similes: ['PROPOSAL_ALERT', 'GOVERNANCE_ALERT', 'NOTIFY_PROPOSAL', 'PROPOSAL_NOTIFICATION'],
+  description: 'Creates alerts to notify you via Telegram when new SEI governance proposals are submitted',
 
   validate: async (
     runtime: IAgentRuntime,
@@ -633,8 +651,10 @@ const setProposalAlertAction: Action = {
     const text = message.content.text.toLowerCase();
     return (
       text.includes('alert') &&
-      (text.includes('proposal') || text.includes('governance')) &&
-      (text.includes('new') || text.includes('when'))
+      (text.includes('proposal') || text.includes('governance'))
+    ) || (
+      text.includes('notify') &&
+      (text.includes('proposal') || text.includes('governance'))
     );
   },
 
@@ -694,7 +714,7 @@ const setProposalAlertAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'Alert me when there is a new proposal',
+          text: 'Alert me when there are new SEI governance proposals',
         },
       },
       {
@@ -710,6 +730,21 @@ const setProposalAlertAction: Action = {
         name: '{{name1}}',
         content: {
           text: 'Notify me about new governance proposals',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: '✅ Proposal alert set successfully!\n\nI\'ll notify you whenever there\'s a new SEI governance proposal.\n\nAlert ID: proposal_1234567890',
+          actions: ['SET_PROPOSAL_ALERT'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'Set up governance alerts for SEI',
         },
       },
       {

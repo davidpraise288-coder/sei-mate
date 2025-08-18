@@ -514,8 +514,8 @@ const swapSeiAction: Action = {
 
 const getBalanceAction: Action = {
   name: 'GET_TOKEN_BALANCE',
-  similes: ['CHECK_BALANCE', 'BALANCE', 'TOKEN_BALANCE', 'WALLET_BALANCE'],
-  description: 'Gets the balance of specified tokens with proper formatting',
+  similes: ['CHECK_TOKEN_BALANCE', 'TOKEN_BALANCE', 'WALLET_TOKEN_BALANCE', 'TOKEN_HOLDINGS'],
+  description: 'Gets the balance of SEI and other tokens in your wallet for swapping',
 
   validate: async (
     runtime: IAgentRuntime,
@@ -525,10 +525,11 @@ const getBalanceAction: Action = {
     if (!message.content.text) return false;
     
     const text = message.content.text.toLowerCase();
-    return text.includes('balance') || 
-           text.includes('check balance') || 
-           text.includes('how much') ||
-           text.includes('wallet');
+    return (text.includes('token') && text.includes('balance')) || 
+           (text.includes('token') && text.includes('holdings')) ||
+           (text.includes('swap') && text.includes('balance')) ||
+           text.includes('token balance') ||
+           text.includes('wallet tokens');
   },
 
   handler: async (
@@ -558,9 +559,9 @@ const getBalanceAction: Action = {
         }
       }
 
-      const response = `💰 **Your Token Balances:**\n${Object.entries(balances)
+      const response = `💰 **Your Wallet Token Balances (Available for Swapping):**\n${Object.entries(balances)
         .map(([symbol, balance]) => `• ${symbol}: ${Number(balance).toFixed(4)}`)
-        .join('\n')}`;
+        .join('\n')}\n\n💡 *These are your wallet token holdings available for swapping*`;
 
       if (callback) {
         await callback({
@@ -596,13 +597,28 @@ const getBalanceAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'Check my token balances',
+          text: 'Check my token balances for swapping',
         },
       },
       {
         name: '{{name2}}',
         content: {
-          text: '💰 **Your Token Balances:**\n• SEI: 10.5000\n• USDC: 25.0000\n• USDT: 15.2500',
+          text: '💰 **Your Wallet Token Balances (Available for Swapping):**\n• SEI: 10.5000\n• USDC: 25.0000\n• USDT: 15.2500\n\n💡 *These are your wallet token holdings available for swapping*',
+          actions: ['GET_TOKEN_BALANCE'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'What tokens do I have in my wallet?',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: '💰 **Your Wallet Token Balances (Available for Swapping):**\n• SEI: 5.2500\n• USDC: 100.0000\n• SEIYAN: 1000.0000\n\n💡 *These are your wallet token holdings available for swapping*',
           actions: ['GET_TOKEN_BALANCE'],
         },
       },

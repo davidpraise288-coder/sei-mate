@@ -309,8 +309,8 @@ export class SEINFTService extends Service {
  */
 const mintNFTAction: Action = {
   name: 'MINT_NFT',
-  similes: ['CREATE_NFT', 'MINT_TOKEN', 'NEW_NFT'],
-  description: 'Mints a new NFT on the SEI blockchain',
+  similes: ['CREATE_NFT', 'MINT_NFT_TOKEN', 'NEW_NFT', 'NFT_CREATE'],
+  description: 'Creates and mints a new NFT on the SEI blockchain with custom metadata',
 
   validate: async (
     runtime: IAgentRuntime,
@@ -320,9 +320,9 @@ const mintNFTAction: Action = {
     if (!message.content.text) return false;
 
     const text = message.content.text.toLowerCase();
-    return text.includes('mint nft') || 
-           text.includes('create nft') || 
-           text.includes('mint token') ||
+    return (text.includes('mint') && text.includes('nft')) || 
+           (text.includes('create') && text.includes('nft')) || 
+           text.includes('mint nft') ||
            text.includes('new nft');
   },
 
@@ -418,13 +418,28 @@ const mintNFTAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'mint NFT name: "Cosmic Dragon" description: "A mystical dragon from the cosmos"',
+          text: 'Create an NFT called "Cosmic Dragon" with description "A mystical dragon from the cosmos"',
         },
       },
       {
         name: '{{name2}}',
         content: {
           text: 'Successfully minted NFT "Cosmic Dragon"! Transaction hash: 0xabc123def456. Gas used: 150000',
+          actions: ['MINT_NFT'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'Mint a new NFT name: "Galaxy Warrior" description: "An epic space warrior NFT"',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: 'Successfully minted NFT "Galaxy Warrior"! Transaction hash: 0xdef789ghi012. Gas used: 150000',
           actions: ['MINT_NFT'],
         },
       },
@@ -437,8 +452,8 @@ const mintNFTAction: Action = {
  */
 const sellNFTAction: Action = {
   name: 'SELL_NFT',
-  similes: ['LIST_NFT', 'SELL_TOKEN', 'LIST_FOR_SALE'],
-  description: 'Lists an NFT for sale on the SEI marketplace',
+  similes: ['LIST_NFT', 'NFT_SELL', 'LIST_NFT_FOR_SALE', 'MARKETPLACE_LIST'],
+  description: 'Lists your NFT for sale on the SEI NFT marketplace with a specified price',
 
   validate: async (
     runtime: IAgentRuntime,
@@ -448,10 +463,10 @@ const sellNFTAction: Action = {
     if (!message.content.text) return false;
 
     const text = message.content.text.toLowerCase();
-    return text.includes('sell nft') || 
-           text.includes('list nft') || 
-           text.includes('sell token') ||
-           text.includes('list for sale');
+    return (text.includes('sell') && text.includes('nft')) || 
+           (text.includes('list') && text.includes('nft')) || 
+           text.includes('sell nft') ||
+           text.includes('list nft');
   },
 
   handler: async (
@@ -548,13 +563,28 @@ const sellNFTAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'sell NFT token: 123 price: 100',
+          text: 'List my NFT #123 for sale at 100 SEI',
         },
       },
       {
         name: '{{name2}}',
         content: {
           text: 'Successfully listed NFT #123 for sale at 100 SEI! Transaction hash: 0xdef789ghi012',
+          actions: ['SELL_NFT'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'Sell NFT token: 456 price: 250',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: 'Successfully listed NFT #456 for sale at 250 SEI! Transaction hash: 0xabc123def456',
           actions: ['SELL_NFT'],
         },
       },
@@ -567,8 +597,8 @@ const sellNFTAction: Action = {
  */
 const buyNFTAction: Action = {
   name: 'BUY_NFT',
-  similes: ['PURCHASE_NFT', 'BUY_TOKEN', 'PURCHASE_TOKEN'],
-  description: 'Buys an NFT from the SEI marketplace',
+  similes: ['PURCHASE_NFT', 'NFT_BUY', 'PURCHASE_NFT_TOKEN', 'MARKETPLACE_BUY'],
+  description: 'Purchases an NFT from the SEI NFT marketplace using your wallet funds',
 
   validate: async (
     runtime: IAgentRuntime,
@@ -578,10 +608,10 @@ const buyNFTAction: Action = {
     if (!message.content.text) return false;
 
     const text = message.content.text.toLowerCase();
-    return text.includes('buy nft') || 
-           text.includes('purchase nft') || 
-           text.includes('buy token') ||
-           text.includes('purchase token');
+    return (text.includes('buy') && text.includes('nft')) || 
+           (text.includes('purchase') && text.includes('nft')) || 
+           text.includes('buy nft') ||
+           text.includes('purchase nft');
   },
 
   handler: async (
@@ -684,13 +714,28 @@ const buyNFTAction: Action = {
       {
         name: '{{name1}}',
         content: {
-          text: 'buy NFT token: 123',
+          text: 'Buy NFT #123 from the marketplace',
         },
       },
       {
         name: '{{name2}}',
         content: {
           text: 'Successfully purchased NFT #123 "Cosmic Dragon" for 100 SEI! Transaction hash: 0xghi345jkl678',
+          actions: ['BUY_NFT'],
+        },
+      },
+    ],
+    [
+      {
+        name: '{{name1}}',
+        content: {
+          text: 'Purchase NFT token: 789',
+        },
+      },
+      {
+        name: '{{name2}}',
+        content: {
+          text: 'Successfully purchased NFT #789 "Galaxy Warrior" for 250 SEI! Transaction hash: 0xmno567pqr890',
           actions: ['BUY_NFT'],
         },
       },
