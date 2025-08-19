@@ -664,7 +664,7 @@ export const seiSwapPlugin: Plugin = {
       {
         prompt,
         stopSequences = [],
-        maxTokens = 8192,
+        maxTokens = 500,
         temperature = 0.7,
         frequencyPenalty = 0.7,
         presencePenalty = 0.7,
