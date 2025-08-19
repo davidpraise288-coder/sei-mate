@@ -11,7 +11,7 @@ describe('Character Configuration', () => {
   });
 
   it('should have the correct name', () => {
-    expect(character.name).toBe('Eliza');
+    expect(character.name).toBe('Sei Mate');
   });
 
   it('should have plugins defined as an array', () => {
@@ -53,6 +53,14 @@ describe('Character Configuration', () => {
     }
   });
 
+  it('should include confirmation prompts in system prompt', () => {
+    expect(character.system).toContain('confirmation');
+    expect(character.system).toContain('SWAP_SEI');
+    expect(character.system).toContain('PLACE_PERPETUAL_ORDER');
+    expect(character.system).toContain('MINT_NFT');
+    expect(character.system).toContain('VOTE_ON_PROPOSAL');
+  });
+
   it('should have personality traits in bio array', () => {
     expect(Array.isArray(character.bio)).toBe(true);
     if (character.bio && Array.isArray(character.bio)) {
@@ -63,6 +71,10 @@ describe('Character Configuration', () => {
         expect(trait.length).toBeGreaterThan(0);
       });
     }
+  });
+
+  it('should include confirmation-related traits in bio', () => {
+    expect(character.bio).toContain('Always asks for confirmation before executing major blockchain actions');
   });
 
   it('should have message examples for training', () => {
@@ -82,5 +94,24 @@ describe('Character Configuration', () => {
         expect(message.content).toHaveProperty('text');
       });
     }
+  });
+
+  it('should include confirmation examples in message examples', () => {
+    const hasConfirmationExample = character.messageExamples.some(example => 
+      example.some(message => 
+        message.content.text && message.content.text.includes('Are you sure you want to swap')
+      )
+    );
+    expect(hasConfirmationExample).toBe(true);
+  });
+
+  it('should have confirmation-related topics', () => {
+    expect(character.topics).toContain('confirmation prompts for major actions');
+  });
+
+  it('should have confirmation-related style guidelines', () => {
+    expect(character.style.all).toContain('Always ask for confirmation before executing major blockchain actions');
+    expect(character.style.all).toContain('Include specific details (amounts, tokens, prices) in confirmation prompts');
+    expect(character.style.chat).toContain('Always confirm major actions before execution');
   });
 });
