@@ -1039,7 +1039,7 @@ export const seiPerpetualTradingPlugin: Plugin = {
       {
         prompt,
         stopSequences = [],
-        maxTokens = 4000,
+        maxTokens = 500,
         temperature = 0.7,
         frequencyPenalty = 0.7,
         presencePenalty = 0.7,
