@@ -898,7 +898,7 @@ export const seiNFTPlugin: Plugin = {
       {
         prompt,
         stopSequences = [],
-        maxTokens = 8192,
+        maxTokens = 4000,
         temperature = 0.7,
         frequencyPenalty = 0.7,
         presencePenalty = 0.7,
