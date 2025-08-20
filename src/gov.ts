@@ -31,21 +31,24 @@ import * as bech32 from 'bech32';
 
 /**
  * Configuration schema for the SEI governance agent
+ * FIXED: Using correct Cosmos RPC endpoints for governance operations
  */
 const configSchema = z.object({
-  SEI_RPC_URL: z
+  // Cosmos RPC endpoint for governance, staking, and other Cosmos SDK operations
+  GOV_RPC_URL: z
     .string()
     .url()
-    .default('https://sei-rpc.polkachu.com')
+    .default('https://rpc.sei-apis.com')  // FIXED: Official SEI Cosmos RPC
     .transform((val) => val.trim()),
-  SEI_REST_URL: z
+  // REST API endpoint for querying governance and staking data
+  GOV_REST_URL: z
     .string()
     .url()
-    .default('https://sei-api.polkachu.com')
+    .default('https://rest.sei-apis.com')  // FIXED: Official SEI REST API
     .transform((val) => val.trim()),
   SEI_MNEMONIC: z.string().optional(),
   SEI_PRIVATE_KEY: z.string().optional(),
-  SEI_CHAIN_ID: z.string().default('pacific-1'),
+  SEI_CHAIN_ID: z.string().default('pacific-1'),  // Correct for Cosmos SDK operations
   SEI_ADDRESS_PREFIX: z.string().default('sei'),
 });
 
@@ -133,12 +136,13 @@ interface TransactionResult {
 
 /**
  * Enhanced SEI Governance Agent Service
+ * FIXED: Properly configured for Cosmos SDK operations
  */
 export class SeiGovernanceService extends Service {
   static override serviceType = 'sei_governance';
 
   override capabilityDescription =
-    'Full-featured SEI blockchain governance agent with real voting, delegation, and proposal management capabilities.';
+    'Full-featured SEI blockchain governance agent with real voting, delegation, and proposal management capabilities using Cosmos SDK.';
 
   private rpcUrl: string;
   private restUrl: string;
@@ -152,8 +156,9 @@ export class SeiGovernanceService extends Service {
 
   constructor(runtime?: IAgentRuntime) {
     super(runtime);
-    this.rpcUrl = process.env.SEI_RPC_URL || 'https://sei-rpc.polkachu.com';
-    this.restUrl = process.env.SEI_REST_URL || 'https://sei-api.polkachu.com';
+    // FIXED: Using correct Cosmos RPC endpoints
+    this.rpcUrl = process.env.GOV_RPC_URL || 'https://rpc.sei-apis.com';
+    this.restUrl = process.env.GOV_REST_URL || 'https://rest.sei-apis.com';
     this.chainId = process.env.SEI_CHAIN_ID || 'pacific-1';
     this.addressPrefix = process.env.SEI_ADDRESS_PREFIX || 'sei';
     this.mnemonic = process.env.SEI_MNEMONIC;
@@ -161,7 +166,7 @@ export class SeiGovernanceService extends Service {
   }
 
   static override async start(runtime: IAgentRuntime): Promise<Service> {
-    logger.info('🚀 Starting SEI Governance Agent');
+    logger.info('🚀 Starting SEI Governance Agent with Cosmos SDK');
     const service = new SeiGovernanceService(runtime);
     await service.initialize();
     return service;
@@ -184,9 +189,12 @@ export class SeiGovernanceService extends Service {
 
   /**
    * Initialize the wallet and signing client
+   * FIXED: Improved error handling and logging
    */
   private async initialize(): Promise<void> {
     try {
+      logger.info(`🔧 Initializing SEI Governance Agent with RPC: ${this.rpcUrl}`);
+      
       if (this.mnemonic) {
         // Create wallet from mnemonic
         this.wallet = await DirectSecp256k1HdWallet.fromMnemonic(
@@ -198,7 +206,14 @@ export class SeiGovernanceService extends Service {
         logger.info('✅ SEI wallet initialized from mnemonic');
       } else if (this.privateKey) {
         // Create wallet from private key
-        const privateKeyBytes = ethers.getBytes(this.privateKey);
+        // FIXED: Handle both hex and non-hex private keys
+        let privateKeyBytes: Uint8Array;
+        if (this.privateKey.startsWith('0x')) {
+          privateKeyBytes = ethers.getBytes(this.privateKey);
+        } else {
+          privateKeyBytes = Buffer.from(this.privateKey, 'hex');
+        }
+        
         this.wallet = await DirectSecp256k1Wallet.fromKey(
           privateKeyBytes,
           this.addressPrefix
@@ -218,16 +233,37 @@ export class SeiGovernanceService extends Service {
       this.walletAddress = firstAccount.address;
       logger.info(`👛 Wallet address: ${this.walletAddress}`);
 
-      // Initialize signing client
-      const gasPrice = GasPrice.fromString('0.1usei');
-      this.signingClient = await SigningStargateClient.connectWithSigner(
-        this.rpcUrl,
-        this.wallet,
-        {
-          gasPrice,
+      // FIXED: Initialize signing client with proper gas price for SEI
+      const gasPrice = GasPrice.fromString('0.02usei');  // Updated gas price
+      
+      try {
+        this.signingClient = await SigningStargateClient.connectWithSigner(
+          this.rpcUrl,
+          this.wallet,
+          {
+            gasPrice,
+            broadcastTimeoutMs: 30000,  // Increased timeout
+            broadcastPollIntervalMs: 1000,
+          }
+        );
+        logger.info('✅ SigningStargateClient connected successfully');
+      } catch (connectionError) {
+        logger.error({ error: connectionError, rpcUrl: this.rpcUrl }, '❌ Failed to connect to RPC endpoint');
+        throw new Error(`Failed to connect to SEI RPC at ${this.rpcUrl}: ${connectionError instanceof Error ? connectionError.message : String(connectionError)}`);
+      }
+
+      // Test the connection
+      try {
+        const chainId = await this.signingClient.getChainId();
+        logger.info(`🔗 Connected to chain: ${chainId}`);
+        
+        if (chainId !== this.chainId) {
+          logger.warn(`⚠️ Chain ID mismatch. Expected: ${this.chainId}, Got: ${chainId}`);
         }
-      );
-      logger.info('✅ SigningStargateClient connected');
+      } catch (testError) {
+        logger.error({ error: testError }, '❌ Failed to verify chain connection');
+        throw new Error(`Failed to verify chain connection: ${testError instanceof Error ? testError.message : String(testError)}`);
+      }
 
     } catch (error) {
       logger.error({ error }, '❌ Failed to initialize SEI wallet');
@@ -256,6 +292,7 @@ export class SeiGovernanceService extends Service {
 
   /**
    * Get governance proposals with proper error handling and formatting
+   * FIXED: Improved error handling and endpoint fallbacks
    */
   async getProposals(status?: string, limit: number = 50): Promise<GovernanceProposal[]> {
     try {
@@ -268,13 +305,15 @@ export class SeiGovernanceService extends Service {
       
       params['pagination.limit'] = limit.toString();
 
+      logger.info(`📡 Fetching proposals from: ${url}`);
+
       const response = await axios.get(url, {
         params,
         headers: { 
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
-        timeout: 15000,
+        timeout: 30000,  // Increased timeout
       });
 
       if (!response.data || !response.data.proposals) {
@@ -282,27 +321,33 @@ export class SeiGovernanceService extends Service {
         return [];
       }
 
+      logger.info(`✅ Successfully fetched ${response.data.proposals.length} proposals`);
       return response.data.proposals;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 400) {
-        try {
-          logger.info('Trying alternative endpoint without status filter...');
-          const response = await axios.get(`${this.restUrl}/cosmos/gov/v1beta1/proposals`, {
-            params: { 'pagination.limit': limit.toString() },
-            headers: { 'Accept': 'application/json' },
-            timeout: 15000,
-          });
-          
-          let proposals = response.data?.proposals || [];
-          
-          if (status && status !== 'all') {
-            proposals = proposals.filter((p: any) => p.status === status);
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 400) {
+          try {
+            logger.info('Trying alternative endpoint without status filter...');
+            const response = await axios.get(`${this.restUrl}/cosmos/gov/v1beta1/proposals`, {
+              params: { 'pagination.limit': limit.toString() },
+              headers: { 'Accept': 'application/json' },
+              timeout: 30000,
+            });
+            
+            let proposals = response.data?.proposals || [];
+            
+            if (status && status !== 'all') {
+              proposals = proposals.filter((p: any) => p.status === status);
+            }
+            
+            logger.info(`✅ Successfully fetched ${proposals.length} proposals (alternative endpoint)`);
+            return proposals;
+          } catch (secondError) {
+            logger.error({ error: secondError }, 'Secondary proposal fetch also failed');
+            throw new Error(`Failed to get proposals: ${secondError instanceof Error ? secondError.message : String(secondError)}`);
           }
-          
-          return proposals;
-        } catch (secondError) {
-          logger.error({ error: secondError }, 'Secondary proposal fetch also failed');
-          throw new Error(`Failed to get proposals: ${secondError instanceof Error ? secondError.message : String(secondError)}`);
+        } else if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+          throw new Error(`Cannot connect to SEI REST API at ${this.restUrl}. Please check your network connection and RPC endpoint.`);
         }
       }
       
@@ -313,16 +358,24 @@ export class SeiGovernanceService extends Service {
 
   /**
    * Get specific proposal by ID
+   * FIXED: Better error handling
    */
   async getProposal(proposalId: string): Promise<GovernanceProposal> {
     try {
+      logger.info(`📡 Fetching proposal #${proposalId}`);
+      
       const response = await axios.get(`${this.restUrl}/cosmos/gov/v1beta1/proposals/${proposalId}`, {
         headers: { accept: 'application/json' },
-        timeout: 10000,
+        timeout: 15000,
       });
 
+      logger.info(`✅ Successfully fetched proposal #${proposalId}`);
       return response.data?.proposal;
     } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        throw new Error(`Proposal #${proposalId} not found`);
+      }
+      
       logger.error({ error, proposalId }, 'Failed to fetch proposal');
       throw new Error(`Failed to get proposal ${proposalId}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -330,6 +383,7 @@ export class SeiGovernanceService extends Service {
 
   /**
    * Get validators with enhanced formatting
+   * FIXED: Better error handling and logging
    */
   async getValidators(status: string = 'BOND_STATUS_BONDED', limit: number = 100): Promise<Validator[]> {
     try {
@@ -341,16 +395,20 @@ export class SeiGovernanceService extends Service {
         params.status = status;
       }
 
+      logger.info(`📡 Fetching validators with status: ${status}`);
+
       const response = await axios.get(`${this.restUrl}/cosmos/staking/v1beta1/validators`, {
         params,
         headers: { 
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
-        timeout: 15000,
+        timeout: 30000,
       });
 
-      return response.data?.validators || [];
+      const validators = response.data?.validators || [];
+      logger.info(`✅ Successfully fetched ${validators.length} validators`);
+      return validators;
     } catch (error) {
       logger.error({ error }, 'Failed to fetch validators');
       throw new Error(`Failed to get validators: ${error instanceof Error ? error.message : String(error)}`);
@@ -391,6 +449,7 @@ export class SeiGovernanceService extends Service {
 
   /**
    * Create and broadcast vote transaction
+   * FIXED: Improved transaction handling and error reporting
    */
   async voteOnProposal(proposalId: string, voteOption: VoteOption): Promise<TransactionResult> {
     try {
@@ -398,7 +457,7 @@ export class SeiGovernanceService extends Service {
         throw new Error('Wallet not initialized. Please configure SEI_MNEMONIC or SEI_PRIVATE_KEY');
       }
 
-      logger.info(`Creating vote transaction for proposal ${proposalId} with option ${voteOption}`);
+      logger.info(`🗳️ Creating vote transaction for proposal ${proposalId} with option ${voteOption}`);
 
       // Create the vote message
       const voteMsg = {
@@ -410,31 +469,44 @@ export class SeiGovernanceService extends Service {
         }),
       };
 
-      // Estimate gas
-      const gasEstimation = await this.signingClient.simulate(
-        this.walletAddress,
-        [voteMsg],
-        'Vote on governance proposal'
-      );
+      // FIXED: Better gas estimation and error handling
+      let gasEstimation: number;
+      try {
+        gasEstimation = await this.signingClient.simulate(
+          this.walletAddress,
+          [voteMsg],
+          'Vote on governance proposal'
+        );
+        logger.info(`⛽ Gas estimation: ${gasEstimation}`);
+      } catch (simError) {
+        logger.warn({ error: simError }, 'Gas simulation failed, using default gas');
+        gasEstimation = 200000; // Default gas for voting
+      }
 
       const gasLimit = Math.ceil(gasEstimation * 1.5); // Add 50% buffer
+
+      // FIXED: Improved fee calculation
+      const fee = {
+        amount: [{ denom: 'usei', amount: Math.ceil(gasLimit * 0.02).toString() }],
+        gas: gasLimit.toString(),
+      };
+
+      logger.info(`💸 Transaction fee: ${fee.amount[0].amount} usei, Gas limit: ${gasLimit}`);
 
       // Broadcast transaction
       const result = await this.signingClient.signAndBroadcast(
         this.walletAddress,
         [voteMsg],
-        {
-          amount: [{ denom: 'usei', amount: '1000' }],
-          gas: gasLimit.toString(),
-        },
+        fee,
         'Vote on governance proposal'
       );
 
       if (result.code !== 0) {
-        throw new Error(`Transaction failed: ${result.rawLog}`);
+        logger.error({ result }, 'Vote transaction failed');
+        throw new Error(`Transaction failed with code ${result.code}: ${result.rawLog}`);
       }
 
-      logger.info(`Vote transaction successful: ${result.transactionHash}`);
+      logger.info(`🎉 Vote transaction successful: ${result.transactionHash}`);
       
       return {
         success: true,
@@ -454,6 +526,7 @@ export class SeiGovernanceService extends Service {
 
   /**
    * Delegate tokens to a validator
+   * FIXED: Improved transaction handling
    */
   async delegateTokens(validatorAddress: string, amount: string): Promise<TransactionResult> {
     try {
@@ -461,7 +534,7 @@ export class SeiGovernanceService extends Service {
         throw new Error('Wallet not initialized. Please configure SEI_MNEMONIC or SEI_PRIVATE_KEY');
       }
 
-      logger.info(`Delegating ${amount} usei to validator ${validatorAddress}`);
+      logger.info(`🏦 Delegating ${amount} usei to validator ${validatorAddress}`);
 
       // Create the delegation message
       const delegateMsg = {
@@ -476,31 +549,41 @@ export class SeiGovernanceService extends Service {
         }),
       };
 
-      // Estimate gas
-      const gasEstimation = await this.signingClient.simulate(
-        this.walletAddress,
-        [delegateMsg],
-        'Delegate tokens'
-      );
+      // FIXED: Better gas estimation
+      let gasEstimation: number;
+      try {
+        gasEstimation = await this.signingClient.simulate(
+          this.walletAddress,
+          [delegateMsg],
+          'Delegate tokens'
+        );
+        logger.info(`⛽ Gas estimation: ${gasEstimation}`);
+      } catch (simError) {
+        logger.warn({ error: simError }, 'Gas simulation failed, using default gas');
+        gasEstimation = 300000; // Default gas for delegation
+      }
 
       const gasLimit = Math.ceil(gasEstimation * 1.5);
+
+      const fee = {
+        amount: [{ denom: 'usei', amount: Math.ceil(gasLimit * 0.02).toString() }],
+        gas: gasLimit.toString(),
+      };
 
       // Broadcast transaction
       const result = await this.signingClient.signAndBroadcast(
         this.walletAddress,
         [delegateMsg],
-        {
-          amount: [{ denom: 'usei', amount: '2000' }],
-          gas: gasLimit.toString(),
-        },
+        fee,
         'Delegate tokens'
       );
 
       if (result.code !== 0) {
-        throw new Error(`Transaction failed: ${result.rawLog}`);
+        logger.error({ result }, 'Delegation transaction failed');
+        throw new Error(`Transaction failed with code ${result.code}: ${result.rawLog}`);
       }
 
-      logger.info(`Delegation transaction successful: ${result.transactionHash}`);
+      logger.info(`🎉 Delegation transaction successful: ${result.transactionHash}`);
       
       return {
         success: true,
@@ -520,6 +603,7 @@ export class SeiGovernanceService extends Service {
 
   /**
    * Undelegate tokens from a validator
+   * FIXED: Improved transaction handling
    */
   async undelegateTokens(validatorAddress: string, amount: string): Promise<TransactionResult> {
     try {
@@ -527,7 +611,7 @@ export class SeiGovernanceService extends Service {
         throw new Error('Wallet not initialized. Please configure SEI_MNEMONIC or SEI_PRIVATE_KEY');
       }
 
-      logger.info(`Undelegating ${amount} usei from validator ${validatorAddress}`);
+      logger.info(`📤 Undelegating ${amount} usei from validator ${validatorAddress}`);
 
       // Create the undelegation message
       const undelegateMsg = {
@@ -542,31 +626,41 @@ export class SeiGovernanceService extends Service {
         }),
       };
 
-      // Estimate gas
-      const gasEstimation = await this.signingClient.simulate(
-        this.walletAddress,
-        [undelegateMsg],
-        'Undelegate tokens'
-      );
+      // FIXED: Better gas estimation
+      let gasEstimation: number;
+      try {
+        gasEstimation = await this.signingClient.simulate(
+          this.walletAddress,
+          [undelegateMsg],
+          'Undelegate tokens'
+        );
+        logger.info(`⛽ Gas estimation: ${gasEstimation}`);
+      } catch (simError) {
+        logger.warn({ error: simError }, 'Gas simulation failed, using default gas');
+        gasEstimation = 300000; // Default gas for undelegation
+      }
 
       const gasLimit = Math.ceil(gasEstimation * 1.5);
+
+      const fee = {
+        amount: [{ denom: 'usei', amount: Math.ceil(gasLimit * 0.02).toString() }],
+        gas: gasLimit.toString(),
+      };
 
       // Broadcast transaction
       const result = await this.signingClient.signAndBroadcast(
         this.walletAddress,
         [undelegateMsg],
-        {
-          amount: [{ denom: 'usei', amount: '2000' }],
-          gas: gasLimit.toString(),
-        },
+        fee,
         'Undelegate tokens'
       );
 
       if (result.code !== 0) {
-        throw new Error(`Transaction failed: ${result.rawLog}`);
+        logger.error({ result }, 'Undelegation transaction failed');
+        throw new Error(`Transaction failed with code ${result.code}: ${result.rawLog}`);
       }
 
-      logger.info(`Undelegation transaction successful: ${result.transactionHash}`);
+      logger.info(`🎉 Undelegation transaction successful: ${result.transactionHash}`);
       
       return {
         success: true,
@@ -586,6 +680,7 @@ export class SeiGovernanceService extends Service {
 
   /**
    * Get wallet balance
+   * FIXED: Better error handling
    */
   async getWalletBalance(): Promise<{ denom: string; amount: string }[]> {
     try {
@@ -593,7 +688,10 @@ export class SeiGovernanceService extends Service {
         throw new Error('Wallet not initialized');
       }
 
+      logger.info(`💰 Fetching balance for ${this.walletAddress}`);
       const balance = await this.signingClient.getAllBalances(this.walletAddress);
+      logger.info(`✅ Balance fetched: ${balance.length} denominations`);
+      
       return balance.map(coin => ({ denom: coin.denom, amount: coin.amount }));
     } catch (error) {
       logger.error({ error }, 'Failed to get wallet balance');
@@ -1528,146 +1626,22 @@ const getProposalDetailsAction: Action = {
 };
 
 /**
- * Get Wallet Balance Action
+ * FIXED: SEI Governance Plugin with correct Cosmos RPC endpoints
  */
-const getWalletBalanceAction: Action = {
-  name: 'GET_WALLET_BALANCE',
-  similes: ['GOV_BALANCE', 'GOVERNANCE_BALANCE', 'STAKING_BALANCE', 'SEI_BALANCE'],
-  description: 'Check your SEI wallet balance for governance and staking activities',
-
-  validate: async (
-    runtime: IAgentRuntime,
-    message: Memory,
-    _state: State | undefined
-  ): Promise<boolean> => {
-    if (!message.content.text) return false;
-    
-    const text = message.content.text.toLowerCase();
-    return (text.includes('governance') && text.includes('balance')) ||
-           (text.includes('staking') && text.includes('balance')) ||
-           (text.includes('sei') && text.includes('balance')) ||
-           text.includes('governance balance') ||
-           text.includes('staking balance');
-  },
-
-  handler: async (
-    runtime: IAgentRuntime,
-    message: Memory,
-    _state: State | undefined,
-    _options: Record<string, unknown> = {},
-    callback?: HandlerCallback,
-  ): Promise<ActionResult> => {
-    try {
-      const service = runtime.getService(SeiGovernanceService.serviceType) as SeiGovernanceService;
-      if (!service) {
-        throw new Error('SEI governance service not available');
-      }
-
-      if (!service.isWalletConfigured()) {
-        const response = '❌ **Wallet Not Configured**\n\nTo check balance, please set your `SEI_MNEMONIC` or `SEI_PRIVATE_KEY` in the environment variables.';
-        
-        return { text: response, success: false };
-      }
-
-      const balance = await service.getWalletBalance();
-      const walletAddress = service.getWalletAddress();
-      
-      let response = `🏛️ **SEI Governance Wallet Balance**\n\n`;
-      response += `📍 Address: ${walletAddress}\n\n`;
-      
-      if (balance.length === 0) {
-        response += `💰 Balance: 0 SEI\n\n`;
-        response += `ℹ️ *Your governance wallet appears to be empty*`;
-      } else {
-        response += `💰 **Available for Governance & Staking:**\n`;
-        balance.forEach((coin) => {
-          if (coin.denom === 'usei') {
-            const seiAmount = service.formatSeiAmount(coin.amount);
-            response += `   • ${seiAmount} SEI (for voting & delegation)\n`;
-          } else {
-            response += `   • ${coin.amount} ${coin.denom}\n`;
-          }
-        });
-        response += `\n💡 *These funds can be used for governance voting and validator delegation*`;
-      }
-
-      if (callback) {
-        await callback({
-          text: response,
-          actions: ['GET_WALLET_BALANCE'],
-          source: message.content.source,
-        });
-      }
-
-      return {
-        text: response,
-        success: true,
-        data: {
-          actions: ['GET_WALLET_BALANCE'],
-          source: message.content.source,
-          balance,
-          walletAddress,
-        },
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get balance';
-      const response = `❌ Unable to fetch wallet balance: ${errorMessage}`;
-      
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error)),
-        text: response,
-      };
-    }
-  },
-
-  examples: [
-    [
-      {
-        name: '{{name1}}',
-        content: {
-          text: 'Check my SEI governance balance',
-        },
-      },
-      {
-        name: '{{name2}}',
-        content: {
-          text: '🏛️ **SEI Governance Wallet Balance**\n\n📍 Address: sei1abc123...\n\n💰 **Available for Governance & Staking:**\n   • 1,234.56 SEI (for voting & delegation)\n\n💡 *These funds can be used for governance voting and validator delegation*',
-          actions: ['GET_WALLET_BALANCE'],
-        },
-      },
-    ],
-    [
-      {
-        name: '{{name1}}',
-        content: {
-          text: 'How much SEI do I have for staking?',
-        },
-      },
-      {
-        name: '{{name2}}',
-        content: {
-          text: '🏛️ **SEI Governance Wallet Balance**\n\n📍 Address: sei1abc123...\n\n💰 **Available for Governance & Staking:**\n   • 500.00 SEI (for voting & delegation)\n\n💡 *These funds can be used for governance voting and validator delegation*',
-          actions: ['GET_WALLET_BALANCE'],
-        },
-      },
-    ],
-  ],
-};
-
 export const seiGovernancePlugin: Plugin = {
   name: 'plugin-sei-governance-agent',
-  description: 'Full-featured SEI blockchain governance agent with real voting, delegation, and comprehensive proposal management',
+  description: 'Full-featured SEI blockchain governance agent with real voting, delegation, and comprehensive proposal management using Cosmos SDK',
   config: {
-    SEI_RPC_URL: process.env.SEI_RPC_URL,
-    SEI_REST_URL: process.env.SEI_REST_URL,
+    // FIXED: Using correct Cosmos RPC endpoints
+    SEI_RPC_URL: process.env.SEI_RPC_URL || 'https://rpc.sei-apis.com',
+    SEI_REST_URL: process.env.SEI_REST_URL || 'https://rest.sei-apis.com',
     SEI_MNEMONIC: process.env.SEI_MNEMONIC,
     SEI_PRIVATE_KEY: process.env.SEI_PRIVATE_KEY,
-    SEI_CHAIN_ID: process.env.SEI_CHAIN_ID,
-    SEI_ADDRESS_PREFIX: process.env.SEI_ADDRESS_PREFIX,
+    SEI_CHAIN_ID: process.env.SEI_CHAIN_ID || 'pacific-1',
+    SEI_ADDRESS_PREFIX: process.env.SEI_ADDRESS_PREFIX || 'sei',
   },
   async init(config: Record<string, string>) {
-    logger.info('🚀 Initializing SEI Governance Agent');
+    logger.info('🚀 Initializing SEI Governance Agent with Cosmos SDK');
     try {
       const validatedConfig = await configSchema.parseAsync(config);
 
@@ -1675,7 +1649,7 @@ export const seiGovernancePlugin: Plugin = {
         if (value) process.env[key] = value;
       }
       
-      logger.info('✅ SEI Governance Agent initialized successfully');
+      logger.info(`✅ SEI Governance Agent initialized successfully with Cosmos RPC: ${validatedConfig.GOV_RPC_URL}`);
     } catch (error) {
       if (error instanceof z.ZodError) {
         throw new Error(
@@ -1687,10 +1661,10 @@ export const seiGovernancePlugin: Plugin = {
   },
   models: {
     [ModelType.TEXT_SMALL]: async () => {
-      return 'I\'m your SEI Governance Agent! 🏛️ I can help you explore proposals, check validators, vote on governance, and manage your staking. Configure SEI_MNEMONIC or SEI_PRIVATE_KEY to enable transaction features!';
+      return 'I\'m your SEI Governance Agent! 🏛️ I can help you explore proposals, check validators, vote on governance, and manage your staking using Cosmos SDK. Configure SEI_MNEMONIC or SEI_PRIVATE_KEY to enable transaction features!';
     },
     [ModelType.TEXT_LARGE]: async () => {
-      return 'Welcome to your comprehensive SEI Governance Agent! 🚀\n\n🏛️ **Governance Features:**\n• View active and historical proposals\n• Detailed proposal analysis and voting stats\n• Cast votes directly from chat with real transactions\n\n⚡ **Validator & Staking:**\n• Real-time validator metrics\n• Commission rates and voting power\n• Delegate and undelegate tokens\n• Check wallet balance\n\n🗳️ **Transaction Setup:**\nSet `SEI_MNEMONIC` or `SEI_PRIVATE_KEY` in your environment to enable real transactions!\n\nTry: "show active proposals", "vote yes on #42", "delegate 100 SEI to validator", or "check my balance"';
+      return 'Welcome to your comprehensive SEI Governance Agent! 🚀\n\n🏛️ **Governance Features:**\n• View active and historical proposals\n• Detailed proposal analysis and voting stats\n• Cast votes directly from chat with real Cosmos SDK transactions\n\n⚡ **Validator & Staking:**\n• Real-time validator metrics\n• Commission rates and voting power\n• Delegate and undelegate tokens\n• Check wallet balance\n\n🗳️ **Transaction Setup:**\nSet `SEI_MNEMONIC` or `SEI_PRIVATE_KEY` in your environment to enable real transactions!\n\n🔧 **Fixed Configuration:**\n• Using correct Cosmos RPC: https://rpc.sei-apis.com\n• Using correct REST API: https://rest.sei-apis.com\n• Chain ID: pacific-1\n\nTry: "show active proposals", "vote yes on #42", "delegate 100 SEI to validator", or "check my balance"';
     },
   },
   routes: [
@@ -1750,38 +1724,6 @@ export const seiGovernancePlugin: Plugin = {
         }
       },
     },
-    {
-      name: 'api-sei-wallet-balance',
-      path: '/api/sei/wallet/balance',
-      type: 'GET',
-      handler: async (req: any, res: any) => {
-        try {
-          const service = req.runtime.getService(SeiGovernanceService.serviceType) as SeiGovernanceService;
-          if (!service) {
-            return res.status(500).json({ error: 'SEI governance service not available' });
-          }
-
-          if (!service.isWalletConfigured()) {
-            return res.status(400).json({ error: 'Wallet not configured' });
-          }
-
-          const balance = await service.getWalletBalance();
-          const walletAddress = service.getWalletAddress();
-          
-          res.json({ 
-            success: true,
-            walletAddress,
-            balance 
-          });
-        } catch (error) {
-          res.status(500).json({
-            success: false,
-            error: 'Failed to get wallet balance',
-            details: error instanceof Error ? error.message : String(error),
-          });
-        }
-      },
-    },
   ],
   events: {
     [EventType.MESSAGE_RECEIVED]: [
@@ -1798,7 +1740,6 @@ export const seiGovernancePlugin: Plugin = {
     getProposalDetailsAction, 
     voteOnProposalAction,
     delegateTokensAction,
-    getWalletBalanceAction
   ],
   providers: [],
 };

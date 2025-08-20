@@ -24,20 +24,20 @@ import axios from 'axios';
  * Defines the configuration schema for the SEI NFT plugin
  */
 const configSchema = z.object({
-  SEI_RPC_URL: z
+  NFT_RPC_URL: z
     .string()
     .url()
     .default('https://rpc.sei-apis.com')
     .transform((val) => val.trim()),
-  SEI_REST_URL: z
+  NFT_REST_URL: z
     .string()
     .url()
     .default('https://rest.sei-apis.com')
     .transform((val) => val.trim()),
-  SEI_CHAIN_ID: z
-    .string()
-    .default('pacific-1')
-    .transform((val) => val.trim()),
+  // SEI_CHAIN_ID: z
+  //   .string()
+  //   .default('pacific-1')
+  //   .transform((val) => val.trim()),
   NFT_CONTRACT_ADDRESS: z
     .string()
     .optional()
@@ -123,13 +123,11 @@ export class SEINFTService extends Service {
 
   constructor(runtime?: IAgentRuntime) {
     super(runtime);
-    this.rpcUrl = process.env.SEI_RPC_URL || 'https://rpc.sei-apis.com';
-    this.restUrl = process.env.SEI_REST_URL || 'https://rest.sei-apis.com';
-    this.chainId = process.env.SEI_CHAIN_ID || 'pacific-1';
-    this.nftContractAddress = process.env.NFT_CONTRACT_ADDRESS;
+    this.rpcUrl = process.env.NFT_RPC_URL || 'https://rpc.sei-apis.com';
+    this.restUrl = process.env.NFT_REST_URL || 'https://rest.sei-apis.com';
+    this.chainId = process.env.NFT_CHAIN_ID || 'pacific-1';
     this.marketplaceContractAddress = process.env.MARKETPLACE_CONTRACT_ADDRESS;
   }
-
   static override async start(runtime: IAgentRuntime): Promise<Service> {
     logger.info('Starting SEI NFT service');
     return new SEINFTService(runtime);

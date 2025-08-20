@@ -25,10 +25,10 @@ import axios from 'axios';
  */
 const configSchema = z.object({
   COINMARKETCAP_API_KEY: z.string().min(1, 'CoinMarketCap API key is required'),
-  SEI_REST_URL: z
+  RPC_REST_URL: z
     .string()
     .url()
-    .default('https://sei-api.polkachu.com')
+    .default('https://evm-rpc.sei-apis.com')
     .transform((val) => val.trim()),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),

@@ -512,119 +512,119 @@ const swapSeiAction: Action = {
   ],
 };
 
-const getBalanceAction: Action = {
-  name: 'GET_TOKEN_BALANCE',
-  similes: ['CHECK_TOKEN_BALANCE', 'TOKEN_BALANCE', 'WALLET_TOKEN_BALANCE', 'TOKEN_HOLDINGS'],
-  description: 'Gets the balance of SEI and other tokens in your wallet for swapping',
+// const getBalanceAction: Action = {
+//   name: 'GET_TOKEN_BALANCE',
+//   similes: ['CHECK_TOKEN_BALANCE', 'TOKEN_BALANCE', 'WALLET_TOKEN_BALANCE', 'TOKEN_HOLDINGS'],
+//   description: 'Gets the balance of SEI and other tokens in your wallet for swapping',
 
-  validate: async (
-    runtime: IAgentRuntime,
-    message: Memory,
-    _state: State | undefined
-  ): Promise<boolean> => {
-    if (!message.content.text) return false;
+//   validate: async (
+//     runtime: IAgentRuntime,
+//     message: Memory,
+//     _state: State | undefined
+//   ): Promise<boolean> => {
+//     if (!message.content.text) return false;
     
-    const text = message.content.text.toLowerCase();
-    return (text.includes('token') && text.includes('balance')) || 
-           (text.includes('token') && text.includes('holdings')) ||
-           (text.includes('swap') && text.includes('balance')) ||
-           text.includes('token balance') ||
-           text.includes('wallet tokens');
-  },
+//     const text = message.content.text.toLowerCase();
+//     return (text.includes('token') && text.includes('balance')) || 
+//            (text.includes('token') && text.includes('holdings')) ||
+//            (text.includes('swap') && text.includes('balance')) ||
+//            text.includes('token balance') ||
+//            text.includes('wallet tokens');
+//   },
 
-  handler: async (
-    runtime: IAgentRuntime,
-    message: Memory,
-    _state: State | undefined,
-    _options: Record<string, unknown> = {},
-    callback?: HandlerCallback,
-    _responses?: Memory[]
-  ): Promise<ActionResult> => {
-    try {
-      const service = runtime.getService(SeiSwapService.serviceType) as SeiSwapService;
-      if (!service) {
-        throw new Error('SEI swap service not available');
-      }
+//   handler: async (
+//     runtime: IAgentRuntime,
+//     message: Memory,
+//     _state: State | undefined,
+//     _options: Record<string, unknown> = {},
+//     callback?: HandlerCallback,
+//     _responses?: Memory[]
+//   ): Promise<ActionResult> => {
+//     try {
+//       const service = runtime.getService(SeiSwapService.serviceType) as SeiSwapService;
+//       if (!service) {
+//         throw new Error('SEI swap service not available');
+//       }
 
-      const tokens = service.getAvailableTokens();
-      const balances: Record<string, string> = {};
+//       const tokens = service.getAvailableTokens();
+//       const balances: Record<string, string> = {};
       
-      // Get balances for all available tokens
-      for (const [key, tokenInfo] of Object.entries(tokens)) {
-        try {
-          balances[tokenInfo.symbol] = await service.getTokenBalance(tokenInfo.address);
-        } catch (error) {
-          logger.warn(`Failed to get balance for ${tokenInfo.symbol}: ${error}`);
-          balances[tokenInfo.symbol] = '0';
-        }
-      }
+//       // Get balances for all available tokens
+//       for (const [key, tokenInfo] of Object.entries(tokens)) {
+//         try {
+//           balances[tokenInfo.symbol] = await service.getTokenBalance(tokenInfo.address);
+//         } catch (error) {
+//           logger.warn(`Failed to get balance for ${tokenInfo.symbol}: ${error}`);
+//           balances[tokenInfo.symbol] = '0';
+//         }
+//       }
 
-      const response = `💰 **Your Wallet Token Balances (Available for Swapping):**\n${Object.entries(balances)
-        .map(([symbol, balance]) => `• ${symbol}: ${Number(balance).toFixed(4)}`)
-        .join('\n')}\n\n💡 *These are your wallet token holdings available for swapping*`;
+//       const response = `💰 **Your Wallet Token Balances (Available for Swapping):**\n${Object.entries(balances)
+//         .map(([symbol, balance]) => `• ${symbol}: ${Number(balance).toFixed(4)}`)
+//         .join('\n')}\n\n💡 *These are your wallet token holdings available for swapping*`;
 
-      if (callback) {
-        await callback({
-          text: response,
-          actions: ['GET_TOKEN_BALANCE'],
-          source: message.content.source,
-        });
-      }
+//       if (callback) {
+//         await callback({
+//           text: response,
+//           actions: ['GET_TOKEN_BALANCE'],
+//           source: message.content.source,
+//         });
+//       }
 
-      return {
-        text: response,
-        success: true,
-        data: {
-          actions: ['GET_TOKEN_BALANCE'],
-          source: message.content.source,
-          balances,
-        },
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get balances';
-      logger.error({ error }, 'Balance check failed');
+//       return {
+//         text: response,
+//         success: true,
+//         data: {
+//           actions: ['GET_TOKEN_BALANCE'],
+//           source: message.content.source,
+//           balances,
+//         },
+//       };
+//     } catch (error) {
+//       const errorMessage = error instanceof Error ? error.message : 'Failed to get balances';
+//       logger.error({ error }, 'Balance check failed');
       
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error)),
-        text: `❌ Sorry, I couldn't get your balances. ${errorMessage}`,
-      };
-    }
-  },
+//       return {
+//         success: false,
+//         error: error instanceof Error ? error : new Error(String(error)),
+//         text: `❌ Sorry, I couldn't get your balances. ${errorMessage}`,
+//       };
+//     }
+//   },
 
-  examples: [
-    [
-      {
-        name: '{{name1}}',
-        content: {
-          text: 'Check my token balances for swapping',
-        },
-      },
-      {
-        name: '{{name2}}',
-        content: {
-          text: '💰 **Your Wallet Token Balances (Available for Swapping):**\n• SEI: 10.5000\n• USDC: 25.0000\n• USDT: 15.2500\n\n💡 *These are your wallet token holdings available for swapping*',
-          actions: ['GET_TOKEN_BALANCE'],
-        },
-      },
-    ],
-    [
-      {
-        name: '{{name1}}',
-        content: {
-          text: 'What tokens do I have in my wallet?',
-        },
-      },
-      {
-        name: '{{name2}}',
-        content: {
-          text: '💰 **Your Wallet Token Balances (Available for Swapping):**\n• SEI: 5.2500\n• USDC: 100.0000\n• SEIYAN: 1000.0000\n\n💡 *These are your wallet token holdings available for swapping*',
-          actions: ['GET_TOKEN_BALANCE'],
-        },
-      },
-    ],
-  ],
-};
+//   examples: [
+//     [
+//       {
+//         name: '{{name1}}',
+//         content: {
+//           text: 'Check my token balances for swapping',
+//         },
+//       },
+//       {
+//         name: '{{name2}}',
+//         content: {
+//           text: '💰 **Your Wallet Token Balances (Available for Swapping):**\n• SEI: 10.5000\n• USDC: 25.0000\n• USDT: 15.2500\n\n💡 *These are your wallet token holdings available for swapping*',
+//           actions: ['GET_TOKEN_BALANCE'],
+//         },
+//       },
+//     ],
+//     [
+//       {
+//         name: '{{name1}}',
+//         content: {
+//           text: 'What tokens do I have in my wallet?',
+//         },
+//       },
+//       {
+//         name: '{{name2}}',
+//         content: {
+//           text: '💰 **Your Wallet Token Balances (Available for Swapping):**\n• SEI: 5.2500\n• USDC: 100.0000\n• SEIYAN: 1000.0000\n\n💡 *These are your wallet token holdings available for swapping*',
+//           actions: ['GET_TOKEN_BALANCE'],
+//         },
+//       },
+//     ],
+//   ],
+// };
 
 export const seiSwapPlugin: Plugin = {
   name: 'plugin-sei-swap',
@@ -771,7 +771,7 @@ export const seiSwapPlugin: Plugin = {
     ],
   },
   services: [SeiSwapService],
-  actions: [swapSeiAction, getBalanceAction],
+  actions: [swapSeiAction],
   providers: [],
 };
 
