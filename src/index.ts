@@ -1,6 +1,5 @@
 import { logger, type IAgentRuntime, type Project, type ProjectAgent } from '@elizaos/core';
 import { seiSwapPlugin } from './swap.ts';
-
 import { seiGovernancePlugin } from './gov.ts';
 import { notificationPlugin } from './notification.ts';
 import { seiPerpetualTradingPlugin } from './trade.ts';
