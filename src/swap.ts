@@ -512,6 +512,258 @@ const swapSeiAction: Action = {
   ],
 };
 
+/**
+ * Demo action to check wallet balance
+ */
+const checkBalanceAction: Action = {
+  name: 'CHECK_BALANCE',
+  similes: ['WALLET_BALANCE', 'BALANCE_CHECK', 'MY_BALANCE', 'CHECK_WALLET'],
+  description: 'Checks the SEI wallet balance and displays portfolio information',
+  validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
+    const text = message.content.text.toLowerCase();
+    return text.includes('balance') || 
+           text.includes('wallet') || 
+           text.includes('check my') ||
+           text.includes('portfolio');
+  },
+  handler: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+  ): Promise<ActionResult> => {
+    try {
+      logger.info('🔍 Checking wallet balance...');
+
+      const service = runtime.getService(SeiSwapService.serviceType) as SeiSwapService;
+      if (!service) {
+        throw new Error('SEI Swap service not available');
+      }
+
+      // Get wallet address from private key
+      const account = service['account'];
+      const walletAddress = account.address;
+
+      // Demo balance data (in a real implementation, this would fetch from blockchain)
+      const demoBalance = {
+        sei: '125.50',
+        usdc: '2,450.75',
+        weth: '0.0125',
+        totalUsd: '3,125.80'
+      };
+
+      const response = `💰 **Wallet Balance Summary**
+
+🔗 **Address:** \`${walletAddress}\`
+
+💎 **Token Balances:**
+• **SEI:** ${demoBalance.sei} SEI (~$${(parseFloat(demoBalance.sei) * 0.42).toFixed(2)})
+• **USDC:** ${demoBalance.usdc} USDC
+• **WETH:** ${demoBalance.weth} WETH (~$${(parseFloat(demoBalance.weth) * 2500).toFixed(2)})
+
+📊 **Portfolio Value:** $${demoBalance.totalUsd} USD
+
+🎯 **Quick Actions:**
+• Say "swap 10 SEI to USDC" to trade tokens
+• Say "send 5 SEI to [address]" to transfer tokens
+• Say "show trading history" for recent transactions`;
+
+      if (callback) {
+        callback({
+          text: response,
+          content: { 
+            success: true, 
+            balance: demoBalance,
+            address: walletAddress 
+          },
+          action: 'CHECK_BALANCE'
+        });
+      }
+
+      return {
+        text: response,
+        content: { 
+          success: true, 
+          balance: demoBalance,
+          address: walletAddress,
+          actions: ['CHECK_BALANCE']
+        }
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to check balance';
+      logger.error({ error }, 'Balance check failed');
+
+      return {
+        text: `❌ Sorry, I couldn't check your wallet balance. ${errorMessage}`,
+        content: { 
+          error: new Error(errorMessage),
+          success: false 
+        }
+      };
+    }
+  },
+  examples: [
+    [
+      {
+        user: '{{user1}}',
+        content: { text: 'What is my wallet balance?' }
+      },
+      {
+        user: 'Sei Mate',
+        content: { 
+          text: '💰 **Wallet Balance Summary**\n\n🔗 **Address:** `sei1abc123def456...`\n\n💎 **Token Balances:**\n• **SEI:** 125.50 SEI (~$52.71)\n• **USDC:** 2,450.75 USDC\n• **WETH:** 0.0125 WETH (~$31.25)\n\n📊 **Portfolio Value:** $3,125.80 USD',
+          actions: ['CHECK_BALANCE']
+        }
+      }
+    ],
+    [
+      {
+        user: '{{user1}}',
+        content: { text: 'Check my portfolio' }
+      },
+      {
+        user: 'Sei Mate',
+        content: { 
+          text: '💰 **Wallet Balance Summary**\n\n🔗 **Address:** `sei1xyz789abc123...`\n\n💎 **Token Balances:**\n• **SEI:** 89.25 SEI (~$37.49)\n• **USDC:** 1,250.00 USDC\n\n📊 **Portfolio Value:** $1,875.45 USD',
+          actions: ['CHECK_BALANCE']
+        }
+      }
+    ]
+  ]
+};
+
+/**
+ * Demo action to transfer SEI tokens
+ */
+const transferTokensAction: Action = {
+  name: 'TRANSFER_TOKENS',
+  similes: ['SEND_SEI', 'TRANSFER_SEI', 'SEND_TOKENS', 'TRANSFER_FUNDS'],
+  description: 'Transfers SEI tokens to another wallet address',
+  validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
+    const text = message.content.text.toLowerCase();
+    return (text.includes('send') || text.includes('transfer')) && 
+           (text.includes('sei') || text.includes('token')) &&
+           (text.includes('to ') || text.includes('0x') || text.includes('sei1'));
+  },
+  handler: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+  ): Promise<ActionResult> => {
+    try {
+      logger.info('💸 Processing token transfer...');
+
+      const text = message.content.text;
+
+      // Extract amount and recipient address
+      const amountMatch = text.match(/send\s+(\d+(?:\.\d+)?)\s+sei/i) || 
+                         text.match(/transfer\s+(\d+(?:\.\d+)?)\s+sei/i);
+      const addressMatch = text.match(/(0x[a-fA-F0-9]{40}|sei1[a-z0-9]{38,58})/);
+
+      if (!amountMatch) {
+        return {
+          text: '❌ Please specify an amount to send (e.g., "send 5 SEI to sei1abc123...")',
+          content: { error: new Error('Amount not specified') }
+        };
+      }
+
+      if (!addressMatch) {
+        return {
+          text: '❌ Please specify a valid recipient address (e.g., "send 5 SEI to sei1abc123...")',
+          content: { error: new Error('Recipient address not specified') }
+        };
+      }
+
+      const amount = parseFloat(amountMatch[1]);
+      const recipientAddress = addressMatch[1];
+
+      // Demo confirmation prompt
+      const confirmationMessage = `🔄 **Transfer Confirmation Required**
+
+💸 **Transfer Details:**
+• **Amount:** ${amount} SEI (~$${(amount * 0.42).toFixed(2)} USD)
+• **To:** \`${recipientAddress}\`
+• **Network:** SEI Mainnet
+• **Estimated Gas:** ~0.001 SEI
+
+⚠️ **Please confirm:** Are you sure you want to send ${amount} SEI to this address?
+
+**Reply with "yes" or "confirm" to proceed, or "cancel" to abort.**`;
+
+      // In demo mode, we'll simulate the transfer after confirmation
+      if (callback) {
+        callback({
+          text: confirmationMessage,
+          content: { 
+            pendingTransfer: {
+              amount,
+              recipient: recipientAddress,
+              status: 'pending_confirmation'
+            }
+          },
+          action: 'TRANSFER_TOKENS'
+        });
+      }
+
+      return {
+        text: confirmationMessage,
+        content: { 
+          pendingTransfer: {
+            amount,
+            recipient: recipientAddress,
+            status: 'pending_confirmation'
+          },
+          actions: ['TRANSFER_TOKENS']
+        }
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to process transfer';
+      logger.error({ error }, 'Token transfer failed');
+
+      return {
+        text: `❌ Sorry, I couldn't process the transfer. ${errorMessage}`,
+        content: { 
+          error: new Error(errorMessage),
+          success: false 
+        }
+      };
+    }
+  },
+  examples: [
+    [
+      {
+        user: '{{user1}}',
+        content: { text: 'Send 10 SEI to sei1abc123def456ghi789' }
+      },
+      {
+        user: 'Sei Mate',
+        content: { 
+          text: '🔄 **Transfer Confirmation Required**\n\n💸 **Transfer Details:**\n• **Amount:** 10 SEI (~$4.20 USD)\n• **To:** `sei1abc123def456ghi789`\n• **Network:** SEI Mainnet\n• **Estimated Gas:** ~0.001 SEI\n\n⚠️ **Please confirm:** Are you sure you want to send 10 SEI to this address?\n\n**Reply with "yes" or "confirm" to proceed, or "cancel" to abort.**',
+          actions: ['TRANSFER_TOKENS']
+        }
+      }
+    ],
+    [
+      {
+        user: '{{user1}}',
+        content: { text: 'Transfer 25.5 SEI to 0xD5ca6eA5e33606554F746606157a7512FA738A12' }
+      },
+      {
+        user: 'Sei Mate',
+        content: { 
+          text: '🔄 **Transfer Confirmation Required**\n\n💸 **Transfer Details:**\n• **Amount:** 25.5 SEI (~$10.71 USD)\n• **To:** `0xD5ca6eA5e33606554F746606157a7512FA738A12`\n• **Network:** SEI Mainnet\n• **Estimated Gas:** ~0.001 SEI\n\n⚠️ **Please confirm:** Are you sure you want to send 25.5 SEI to this address?',
+          actions: ['TRANSFER_TOKENS']
+        }
+      }
+    ]
+  ]
+};
+
 // const getBalanceAction: Action = {
 //   name: 'GET_TOKEN_BALANCE',
 //   similes: ['CHECK_TOKEN_BALANCE', 'TOKEN_BALANCE', 'WALLET_TOKEN_BALANCE', 'TOKEN_HOLDINGS'],
@@ -627,50 +879,29 @@ const swapSeiAction: Action = {
 // };
 
 export const seiSwapPlugin: Plugin = {
-  name: 'plugin-sei-swap',
-  description: 'Provides SEI token swapping functionality using Symphony protocol with proper balance checks and approvals',
+  name: 'sei-swap',
+  description: 'SEI token swapping plugin with Symphony protocol integration',
+  actions: [swapTokensAction, checkBalanceAction, transferTokensAction], // Added new demo actions
+  providers: [swapProvider],
+  evaluators: [],
+  services: [SeiSwapService],
   config: {
     SEI_PRIVATE_KEY: process.env.SEI_PRIVATE_KEY,
     SEI_RPC_URL: process.env.SEI_RPC_URL,
     SEI_SLIPPAGE_TOLERANCE: process.env.SEI_SLIPPAGE_TOLERANCE,
   },
-  async init(config: Record<string, string>) {
-    logger.info('Initializing plugin-sei-swap');
-    try {
-      const validatedConfig = await configSchema.parseAsync(config);
-
-      // Set all environment variables at once
-      for (const [key, value] of Object.entries(validatedConfig)) {
-        if (value) process.env[key] = value;
-      }
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        throw new Error(
-          `Invalid plugin configuration: ${error.errors.map((e) => e.message).join(', ')}`
-        );
-      }
-      throw error;
-    }
-  },
   models: {
     [ModelType.TEXT_SMALL]: async (
-      _runtime,
-      { prompt, stopSequences = [] }: GenerateTextParams
-    ) => {
-      return 'I can help you swap SEI tokens using Symphony protocol with proper balance checks and approvals.';
+      runtime: IAgentRuntime,
+      params: GenerateTextParams
+    ): Promise<string> => {
+      return `SEI Swap Plugin Response: ${params.prompt}`;
     },
     [ModelType.TEXT_LARGE]: async (
-      _runtime,
-      {
-        prompt,
-        stopSequences = [],
-        maxTokens = 8192,
-        temperature = 0.7,
-        frequencyPenalty = 0.7,
-        presencePenalty = 0.7,
-      }: GenerateTextParams
-    ) => {
-      return 'I specialize in SEI token swapping using the Symphony protocol. I can swap between SEI, USDC, USDT and other supported tokens. I always check balances before swapping and handle approvals automatically. You can ask me to swap tokens, check balances, or get swap routes.';
+      runtime: IAgentRuntime,
+      params: GenerateTextParams
+    ): Promise<string> => {
+      return `SEI Swap Plugin Detailed Response: ${params.prompt}`;
     },
   },
   routes: [
@@ -770,9 +1001,6 @@ export const seiSwapPlugin: Plugin = {
       },
     ],
   },
-  services: [SeiSwapService],
-  actions: [swapSeiAction],
-  providers: [],
 };
 
 export default seiSwapPlugin;

@@ -1626,11 +1626,274 @@ const getProposalDetailsAction: Action = {
 };
 
 /**
+ * Demo action to show current proposals with sample data
+ */
+const showDemoProposalsAction: Action = {
+  name: 'SHOW_DEMO_PROPOSALS',
+  similes: ['LIST_PROPOSALS', 'SHOW_PROPOSALS', 'GOVERNANCE_PROPOSALS', 'ACTIVE_PROPOSALS'],
+  description: 'Shows current governance proposals with demo data for demonstration',
+  validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
+    const text = message.content.text.toLowerCase();
+    return text.includes('proposal') || 
+           text.includes('governance') || 
+           text.includes('vote') ||
+           text.includes('democracy');
+  },
+  handler: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+  ): Promise<ActionResult> => {
+    try {
+      logger.info('🏛️ Fetching demo governance proposals...');
+
+      // Demo proposals data
+      const demoProposals = [
+        {
+          id: '42',
+          title: 'SEI Network Upgrade v2.0',
+          description: 'Upgrade the SEI network to improve transaction throughput and reduce fees',
+          status: 'VOTING',
+          votes: { yes: '15,420,000', no: '2,180,000', abstain: '890,000', veto: '45,000' },
+          endTime: '2025-02-15T18:00:00Z',
+          deposit: '10,000 SEI'
+        },
+        {
+          id: '43',
+          title: 'Community Pool Funding for DeFi Development',
+          description: 'Allocate 500,000 SEI from community pool to fund DeFi protocol development',
+          status: 'VOTING',
+          votes: { yes: '8,920,000', no: '5,430,000', abstain: '1,200,000', veto: '120,000' },
+          endTime: '2025-02-20T12:00:00Z',
+          deposit: '10,000 SEI'
+        },
+        {
+          id: '41',
+          title: 'Validator Commission Rate Cap',
+          description: 'Set maximum validator commission rate to 10% to protect delegators',
+          status: 'PASSED',
+          votes: { yes: '22,150,000', no: '1,890,000', abstain: '450,000', veto: '25,000' },
+          endTime: '2025-01-25T16:00:00Z',
+          deposit: '10,000 SEI'
+        }
+      ];
+
+      const response = `🏛️ **SEI Governance Proposals**
+
+${demoProposals.map(proposal => {
+        const totalVotes = parseInt(proposal.votes.yes.replace(/,/g, '')) + 
+                          parseInt(proposal.votes.no.replace(/,/g, '')) + 
+                          parseInt(proposal.votes.abstain.replace(/,/g, '')) + 
+                          parseInt(proposal.votes.veto.replace(/,/g, ''));
+        const yesPercentage = ((parseInt(proposal.votes.yes.replace(/,/g, '')) / totalVotes) * 100).toFixed(1);
+        
+        const statusEmoji = proposal.status === 'VOTING' ? '🗳️' : 
+                           proposal.status === 'PASSED' ? '✅' : '❌';
+        
+        return `${statusEmoji} **Proposal #${proposal.id}** - ${proposal.status}
+📋 **Title:** ${proposal.title}
+📝 **Description:** ${proposal.description}
+📊 **Votes:** ${yesPercentage}% Yes (${proposal.votes.yes} SEI)
+⏰ **End Time:** ${new Date(proposal.endTime).toLocaleString()}
+
+`;
+      }).join('')}
+
+🎯 **Quick Actions:**
+• Say "vote yes on proposal 42" to cast your vote
+• Say "delegate tokens to validator" to increase voting power
+• Say "check my voting power" to see your current stake
+
+💡 **Demo Note:** These are sample proposals for demonstration purposes.`;
+
+      if (callback) {
+        callback({
+          text: response,
+          content: { 
+            success: true, 
+            proposals: demoProposals 
+          },
+          action: 'SHOW_DEMO_PROPOSALS'
+        });
+      }
+
+      return {
+        text: response,
+        content: { 
+          success: true, 
+          proposals: demoProposals,
+          actions: ['SHOW_DEMO_PROPOSALS']
+        }
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch proposals';
+      logger.error({ error }, 'Demo proposals fetch failed');
+
+      return {
+        text: `❌ Sorry, I couldn't fetch the governance proposals. ${errorMessage}`,
+        content: { 
+          error: new Error(errorMessage),
+          success: false 
+        }
+      };
+    }
+  },
+  examples: [
+    [
+      {
+        user: '{{user1}}',
+        content: { text: 'Show me current governance proposals' }
+      },
+      {
+        user: 'Sei Mate',
+        content: { 
+          text: '🏛️ **SEI Governance Proposals**\n\n🗳️ **Proposal #42** - VOTING\n📋 **Title:** SEI Network Upgrade v2.0\n📊 **Votes:** 83.2% Yes (15,420,000 SEI)\n⏰ **End Time:** 2/15/2025, 6:00:00 PM',
+          actions: ['SHOW_DEMO_PROPOSALS']
+        }
+      }
+    ]
+  ]
+};
+
+/**
+ * Demo action to show staking information
+ */
+const showStakingInfoAction: Action = {
+  name: 'SHOW_STAKING_INFO',
+  similes: ['STAKING_INFO', 'MY_DELEGATIONS', 'VALIDATOR_INFO', 'STAKING_REWARDS'],
+  description: 'Shows staking information and delegation details with demo data',
+  validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
+    const text = message.content.text.toLowerCase();
+    return text.includes('staking') || 
+           text.includes('delegation') || 
+           text.includes('validator') ||
+           text.includes('rewards') ||
+           text.includes('stake');
+  },
+  handler: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+  ): Promise<ActionResult> => {
+    try {
+      logger.info('⚡ Fetching demo staking information...');
+
+      // Demo staking data
+      const demoStaking = {
+        totalDelegated: '1,250.00',
+        availableRewards: '15.75',
+        delegations: [
+          {
+            validator: 'SEI Foundation',
+            address: 'seivaloper1abc123...',
+            delegated: '500.00',
+            rewards: '6.25',
+            commission: '5%',
+            votingPower: '8.5%'
+          },
+          {
+            validator: 'Cosmostation',
+            address: 'seivaloper1def456...',
+            delegated: '400.00',
+            rewards: '4.80',
+            commission: '7%',
+            votingPower: '6.2%'
+          },
+          {
+            validator: 'Stakely',
+            address: 'seivaloper1ghi789...',
+            delegated: '350.00',
+            rewards: '4.70',
+            commission: '6%',
+            votingPower: '5.1%'
+          }
+        ]
+      };
+
+      const response = `⚡ **Staking & Delegation Summary**
+
+💰 **Overview:**
+• **Total Delegated:** ${demoStaking.totalDelegated} SEI (~$${(parseFloat(demoStaking.totalDelegated.replace(/,/g, '')) * 0.42).toFixed(2)})
+• **Available Rewards:** ${demoStaking.availableRewards} SEI (~$${(parseFloat(demoStaking.availableRewards) * 0.42).toFixed(2)})
+• **Annual Staking Yield:** ~12.5% APR
+
+🏛️ **Your Delegations:**
+${demoStaking.delegations.map(del => 
+`• **${del.validator}**
+  💎 Delegated: ${del.delegated} SEI
+  🎁 Rewards: ${del.rewards} SEI
+  💼 Commission: ${del.commission}
+  🗳️ Voting Power: ${del.votingPower}
+`).join('\n')}
+
+🎯 **Quick Actions:**
+• Say "claim staking rewards" to collect your rewards
+• Say "delegate 100 SEI to validator" to increase your stake
+• Say "redelegate from validator A to validator B" to switch validators
+
+💡 **Demo Note:** This is sample staking data for demonstration purposes.`;
+
+      if (callback) {
+        callback({
+          text: response,
+          content: { 
+            success: true, 
+            staking: demoStaking 
+          },
+          action: 'SHOW_STAKING_INFO'
+        });
+      }
+
+      return {
+        text: response,
+        content: { 
+          success: true, 
+          staking: demoStaking,
+          actions: ['SHOW_STAKING_INFO']
+        }
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch staking info';
+      logger.error({ error }, 'Demo staking info fetch failed');
+
+      return {
+        text: `❌ Sorry, I couldn't fetch your staking information. ${errorMessage}`,
+        content: { 
+          error: new Error(errorMessage),
+          success: false 
+        }
+      };
+    }
+  },
+  examples: [
+    [
+      {
+        user: '{{user1}}',
+        content: { text: 'Show my staking information' }
+      },
+      {
+        user: 'Sei Mate',
+        content: { 
+          text: '⚡ **Staking & Delegation Summary**\n\n💰 **Overview:**\n• **Total Delegated:** 1,250.00 SEI (~$525.00)\n• **Available Rewards:** 15.75 SEI (~$6.62)\n• **Annual Staking Yield:** ~12.5% APR',
+          actions: ['SHOW_STAKING_INFO']
+        }
+      }
+    ]
+  ]
+};
+
+/**
  * FIXED: SEI Governance Plugin with correct Cosmos RPC endpoints
  */
 export const seiGovernancePlugin: Plugin = {
-  name: 'plugin-sei-governance-agent',
-  description: 'Full-featured SEI blockchain governance agent with real voting, delegation, and comprehensive proposal management using Cosmos SDK',
+  name: 'sei-governance',
+  description: 'SEI governance plugin for voting, delegation, and staking operations',
   config: {
     // FIXED: Using correct Cosmos RPC endpoints
     SEI_RPC_URL: process.env.SEI_RPC_URL || 'https://rpc.sei-apis.com',
@@ -1661,7 +1924,7 @@ export const seiGovernancePlugin: Plugin = {
   },
   models: {
     [ModelType.TEXT_SMALL]: async () => {
-      return 'I\'m your SEI Governance Agent! 🏛️ I can help you explore proposals, check validators, vote on governance, and manage your staking using Cosmos SDK. Configure SEI_MNEMONIC or SEI_PRIVATE_KEY to enable transaction features!';
+      return 'SEI Governance Agent: I can help you participate in SEI governance, vote on proposals, delegate tokens, and manage your staking rewards.';
     },
     [ModelType.TEXT_LARGE]: async () => {
       return 'Welcome to your comprehensive SEI Governance Agent! 🚀\n\n🏛️ **Governance Features:**\n• View active and historical proposals\n• Detailed proposal analysis and voting stats\n• Cast votes directly from chat with real Cosmos SDK transactions\n\n⚡ **Validator & Staking:**\n• Real-time validator metrics\n• Commission rates and voting power\n• Delegate and undelegate tokens\n• Check wallet balance\n\n🗳️ **Transaction Setup:**\nSet `SEI_MNEMONIC` or `SEI_PRIVATE_KEY` in your environment to enable real transactions!\n\n🔧 **Fixed Configuration:**\n• Using correct Cosmos RPC: https://rpc.sei-apis.com\n• Using correct REST API: https://rest.sei-apis.com\n• Chain ID: pacific-1\n\nTry: "show active proposals", "vote yes on #42", "delegate 100 SEI to validator", or "check my balance"';
@@ -1740,6 +2003,8 @@ export const seiGovernancePlugin: Plugin = {
     getProposalDetailsAction, 
     voteOnProposalAction,
     delegateTokensAction,
+    showDemoProposalsAction,
+    showStakingInfoAction,
   ],
   providers: [],
 };

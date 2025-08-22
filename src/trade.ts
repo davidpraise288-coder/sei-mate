@@ -1000,9 +1000,299 @@ const depositAction: Action = {
   ],
 };
 
+/**
+ * Demo action to show trading portfolio
+ */
+const showTradingPortfolioAction: Action = {
+  name: 'SHOW_TRADING_PORTFOLIO',
+  similes: ['TRADING_PORTFOLIO', 'MY_POSITIONS', 'TRADING_BALANCE', 'PORTFOLIO_SUMMARY'],
+  description: 'Shows trading portfolio and position summary with demo data',
+  validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
+    const text = message.content.text.toLowerCase();
+    return text.includes('portfolio') || 
+           text.includes('positions') || 
+           text.includes('trading balance') ||
+           text.includes('pnl') ||
+           text.includes('profit');
+  },
+  handler: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+  ): Promise<ActionResult> => {
+    try {
+      logger.info('📈 Fetching demo trading portfolio...');
+
+      // Demo portfolio data
+      const demoPortfolio = {
+        totalBalance: '5,420.75',
+        availableMargin: '3,250.50',
+        usedMargin: '2,170.25',
+        totalPnL: '+285.50',
+        dailyPnL: '+45.25',
+        positions: [
+          {
+            symbol: 'SEI-PERP',
+            side: 'LONG',
+            size: '1,250',
+            entryPrice: '0.4250',
+            markPrice: '0.4420',
+            pnl: '+212.50',
+            margin: '531.25',
+            liquidationPrice: '0.3825'
+          },
+          {
+            symbol: 'BTC-PERP',
+            side: 'SHORT',
+            size: '0.05',
+            entryPrice: '98,500',
+            markPrice: '97,250',
+            pnl: '+62.50',
+            margin: '985.00',
+            liquidationPrice: '105,250'
+          },
+          {
+            symbol: 'ETH-PERP',
+            side: 'LONG',
+            size: '0.8',
+            entryPrice: '3,420',
+            markPrice: '3,450',
+            pnl: '+24.00',
+            margin: '654.00',
+            liquidationPrice: '2,950'
+          }
+        ],
+        recentTrades: [
+          { symbol: 'SEI-PERP', side: 'BUY', size: '500', price: '0.4180', time: '2 hours ago', pnl: '+120.00' },
+          { symbol: 'BTC-PERP', side: 'SELL', size: '0.02', price: '98,800', time: '4 hours ago', pnl: '+31.20' },
+          { symbol: 'ETH-PERP', side: 'BUY', size: '0.3', price: '3,400', time: '6 hours ago', pnl: '+15.00' }
+        ]
+      };
+
+      const response = `📈 **Trading Portfolio Summary**
+
+💰 **Account Balance:**
+• **Total Balance:** $${demoPortfolio.totalBalance}
+• **Available Margin:** $${demoPortfolio.availableMargin}
+• **Used Margin:** $${demoPortfolio.usedMargin}
+• **Total P&L:** ${demoPortfolio.totalPnL} USD
+• **Daily P&L:** ${demoPortfolio.dailyPnL} USD
+
+🎯 **Open Positions:**
+${demoPortfolio.positions.map(pos => 
+`• **${pos.symbol}** ${pos.side}
+  📊 Size: ${pos.size}
+  💲 Entry: $${pos.entryPrice} | Mark: $${pos.markPrice}
+  💚 P&L: ${pos.pnl} USD
+  🛡️ Margin: $${pos.margin}
+  ⚠️ Liq. Price: $${pos.liquidationPrice}
+`).join('\n')}
+
+📊 **Recent Trades:**
+${demoPortfolio.recentTrades.map(trade => 
+`• ${trade.side} ${trade.size} ${trade.symbol} @ $${trade.price}
+  ⏰ ${trade.time} | P&L: ${trade.pnl}`).join('\n')}
+
+🎯 **Quick Actions:**
+• Say "place buy order 100 SEI-PERP" to open a position
+• Say "close position SEI-PERP" to close a position
+• Say "set stop loss at 0.40" to manage risk
+
+💡 **Demo Note:** This is sample trading data for demonstration purposes.`;
+
+      if (callback) {
+        callback({
+          text: response,
+          content: { 
+            success: true, 
+            portfolio: demoPortfolio 
+          },
+          action: 'SHOW_TRADING_PORTFOLIO'
+        });
+      }
+
+      return {
+        text: response,
+        content: { 
+          success: true, 
+          portfolio: demoPortfolio,
+          actions: ['SHOW_TRADING_PORTFOLIO']
+        }
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch portfolio';
+      logger.error({ error }, 'Demo portfolio fetch failed');
+
+      return {
+        text: `❌ Sorry, I couldn't fetch your trading portfolio. ${errorMessage}`,
+        content: { 
+          error: new Error(errorMessage),
+          success: false 
+        }
+      };
+    }
+  },
+  examples: [
+    [
+      {
+        user: '{{user1}}',
+        content: { text: 'Show my trading portfolio' }
+      },
+      {
+        user: 'Sei Mate',
+        content: { 
+          text: '📈 **Trading Portfolio Summary**\n\n💰 **Account Balance:**\n• **Total Balance:** $5,420.75\n• **Total P&L:** +285.50 USD\n• **Daily P&L:** +45.25 USD',
+          actions: ['SHOW_TRADING_PORTFOLIO']
+        }
+      }
+    ]
+  ]
+};
+
+/**
+ * Demo action to show market data
+ */
+const showMarketDataAction: Action = {
+  name: 'SHOW_MARKET_DATA',
+  similes: ['MARKET_DATA', 'PRICE_DATA', 'MARKET_INFO', 'TRADING_PAIRS'],
+  description: 'Shows current market data and trading pairs with demo data',
+  validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
+    const text = message.content.text.toLowerCase();
+    return text.includes('market') || 
+           text.includes('price') || 
+           text.includes('trading pairs') ||
+           text.includes('volume') ||
+           text.includes('24h');
+  },
+  handler: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+  ): Promise<ActionResult> => {
+    try {
+      logger.info('📊 Fetching demo market data...');
+
+      // Demo market data
+      const demoMarkets = [
+        {
+          symbol: 'SEI-PERP',
+          price: '0.4420',
+          change24h: '+5.25%',
+          volume24h: '15,420,000',
+          openInterest: '8,950,000',
+          fundingRate: '0.0125%'
+        },
+        {
+          symbol: 'BTC-PERP',
+          price: '97,250',
+          change24h: '-1.85%',
+          volume24h: '2,850,000',
+          openInterest: '1,250,000',
+          fundingRate: '-0.0055%'
+        },
+        {
+          symbol: 'ETH-PERP',
+          price: '3,450',
+          change24h: '+2.15%',
+          volume24h: '1,920,000',
+          openInterest: '890,000',
+          fundingRate: '0.0085%'
+        },
+        {
+          symbol: 'SOL-PERP',
+          price: '245.80',
+          change24h: '+8.95%',
+          volume24h: '850,000',
+          openInterest: '420,000',
+          fundingRate: '0.0195%'
+        }
+      ];
+
+      const response = `📊 **Market Data & Trading Pairs**
+
+🏆 **Top Perpetual Contracts:**
+${demoMarkets.map(market => {
+        const changeColor = market.change24h.startsWith('+') ? '🟢' : '🔴';
+        return `${changeColor} **${market.symbol}**
+💲 Price: $${market.price}
+📈 24h Change: ${market.change24h}
+📊 Volume: $${market.volume24h}
+🎯 Open Interest: $${market.openInterest}
+⚡ Funding: ${market.fundingRate}
+`;
+      }).join('\n')}
+
+📈 **Market Summary:**
+• **Total Volume (24h):** $21,040,000
+• **Total Open Interest:** $11,510,000
+• **Active Traders:** 2,450
+• **Funding Interval:** Every 8 hours
+
+🎯 **Quick Actions:**
+• Say "trade SEI-PERP" to start trading
+• Say "buy 100 BTC-PERP at market" to place an order
+• Say "set price alert SEI above 0.45" for notifications
+
+💡 **Demo Note:** This is sample market data for demonstration purposes.`;
+
+      if (callback) {
+        callback({
+          text: response,
+          content: { 
+            success: true, 
+            markets: demoMarkets 
+          },
+          action: 'SHOW_MARKET_DATA'
+        });
+      }
+
+      return {
+        text: response,
+        content: { 
+          success: true, 
+          markets: demoMarkets,
+          actions: ['SHOW_MARKET_DATA']
+        }
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch market data';
+      logger.error({ error }, 'Demo market data fetch failed');
+
+      return {
+        text: `❌ Sorry, I couldn't fetch the market data. ${errorMessage}`,
+        content: { 
+          error: new Error(errorMessage),
+          success: false 
+        }
+      };
+    }
+  },
+  examples: [
+    [
+      {
+        user: '{{user1}}',
+        content: { text: 'Show me market data' }
+      },
+      {
+        user: 'Sei Mate',
+        content: { 
+          text: '📊 **Market Data & Trading Pairs**\n\n🟢 **SEI-PERP**\n💲 Price: $0.4420\n📈 24h Change: +5.25%\n📊 Volume: $15,420,000',
+          actions: ['SHOW_MARKET_DATA']
+        }
+      }
+    ]
+  ]
+};
+
 export const seiPerpetualTradingPlugin: Plugin = {
-  name: 'plugin-sei-perpetual-trading',
-  description: 'Provides SEI perpetual trading functionality using Citrex protocol with position management, order placement, and account monitoring',
+  name: 'sei-perpetual-trading',
+  description: 'SEI perpetual trading plugin with Citrex protocol integration and portfolio tracking',
   config: {
     SEI_PRIVATE_KEY: process.env.SEI_PRIVATE_KEY,
     SEI_RPC_URL: process.env.SEI_RPC_URL,
@@ -1032,7 +1322,7 @@ export const seiPerpetualTradingPlugin: Plugin = {
       _runtime,
       { prompt, stopSequences = [] }: GenerateTextParams
     ) => {
-      return 'I can help you trade perpetual contracts on SEI using Citrex protocol with position management and order placement.';
+      return 'I can help you trade perpetual contracts on SEI using Citrex protocol with position management.';
     },
     [ModelType.TEXT_LARGE]: async (
       _runtime,
@@ -1168,6 +1458,8 @@ export const seiPerpetualTradingPlugin: Plugin = {
     getAccountBalanceAction,
     getOpenOrdersAction,
     depositAction,
+    showTradingPortfolioAction,
+    showMarketDataAction
   ],
   providers: [],
 };

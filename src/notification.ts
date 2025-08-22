@@ -826,8 +826,300 @@ const setProposalAlertAction: Action = {
   ],
 };
 
+/**
+ * Demo action to show active alerts
+ */
+const showActiveAlertsAction: Action = {
+  name: 'SHOW_ACTIVE_ALERTS',
+  similes: ['ACTIVE_ALERTS', 'MY_ALERTS', 'PRICE_ALERTS', 'NOTIFICATIONS'],
+  description: 'Shows active price alerts and notification settings with demo data',
+  validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
+    const text = message.content.text.toLowerCase();
+    return text.includes('alerts') || 
+           text.includes('notifications') || 
+           text.includes('my alerts') ||
+           text.includes('active');
+  },
+  handler: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+  ): Promise<ActionResult> => {
+    try {
+      logger.info('🔔 Fetching demo active alerts...');
+
+      // Demo alerts data
+      const demoAlerts = {
+        priceAlerts: [
+          {
+            id: 'alert_1',
+            symbol: 'SEI',
+            condition: 'above',
+            targetPrice: '0.50',
+            currentPrice: '0.4420',
+            status: 'active',
+            created: '2 days ago'
+          },
+          {
+            id: 'alert_2',
+            symbol: 'SEI',
+            condition: 'below',
+            targetPrice: '0.35',
+            currentPrice: '0.4420',
+            status: 'active',
+            created: '1 week ago'
+          },
+          {
+            id: 'alert_3',
+            symbol: 'BTC',
+            condition: 'above',
+            targetPrice: '100000',
+            currentPrice: '97,250',
+            status: 'active',
+            created: '3 days ago'
+          }
+        ],
+        governanceAlerts: [
+          {
+            id: 'gov_1',
+            type: 'new_proposal',
+            status: 'active',
+            description: 'New governance proposals',
+            created: '1 week ago'
+          },
+          {
+            id: 'gov_2',
+            type: 'voting_reminder',
+            status: 'active',
+            description: 'Voting deadline reminders',
+            created: '2 weeks ago'
+          }
+        ],
+        recentNotifications: [
+          { message: 'SEI price increased 5.2% in the last hour', time: '1 hour ago', type: 'price' },
+          { message: 'New governance proposal #43 submitted', time: '3 hours ago', type: 'governance' },
+          { message: 'Your staking rewards are ready to claim: 15.75 SEI', time: '6 hours ago', type: 'staking' }
+        ]
+      };
+
+      const response = `🔔 **Active Alerts & Notifications**
+
+💰 **Price Alerts:**
+${demoAlerts.priceAlerts.map(alert => {
+        const emoji = alert.condition === 'above' ? '⬆️' : '⬇️';
+        const status = alert.status === 'active' ? '🟢' : '🔴';
+        return `${status} ${emoji} **${alert.symbol}** ${alert.condition} $${alert.targetPrice}
+  📊 Current: $${alert.currentPrice}
+  ⏰ Created: ${alert.created}`;
+      }).join('\n\n')}
+
+🏛️ **Governance Alerts:**
+${demoAlerts.governanceAlerts.map(alert => 
+`🟢 📋 **${alert.description}**
+  ⏰ Created: ${alert.created}`).join('\n\n')}
+
+📬 **Recent Notifications:**
+${demoAlerts.recentNotifications.map(notif => {
+        const emoji = notif.type === 'price' ? '💰' : 
+                     notif.type === 'governance' ? '🏛️' : '⚡';
+        return `${emoji} ${notif.message}
+  ⏰ ${notif.time}`;
+      }).join('\n\n')}
+
+🎯 **Quick Actions:**
+• Say "set price alert SEI above 0.50" to create new alert
+• Say "remove alert for BTC" to delete an alert
+• Say "notification settings" to manage preferences
+
+💡 **Demo Note:** These are sample alerts for demonstration purposes.`;
+
+      if (callback) {
+        callback({
+          text: response,
+          content: { 
+            success: true, 
+            alerts: demoAlerts 
+          },
+          action: 'SHOW_ACTIVE_ALERTS'
+        });
+      }
+
+      return {
+        text: response,
+        content: { 
+          success: true, 
+          alerts: demoAlerts,
+          actions: ['SHOW_ACTIVE_ALERTS']
+        }
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch alerts';
+      logger.error({ error }, 'Demo alerts fetch failed');
+
+      return {
+        text: `❌ Sorry, I couldn't fetch your active alerts. ${errorMessage}`,
+        content: { 
+          error: new Error(errorMessage),
+          success: false 
+        }
+      };
+    }
+  },
+  examples: [
+    [
+      {
+        user: '{{user1}}',
+        content: { text: 'Show my active alerts' }
+      },
+      {
+        user: 'Sei Mate',
+        content: { 
+          text: '🔔 **Active Alerts & Notifications**\n\n💰 **Price Alerts:**\n🟢 ⬆️ **SEI** above $0.50\n📊 Current: $0.4420\n⏰ Created: 2 days ago',
+          actions: ['SHOW_ACTIVE_ALERTS']
+        }
+      }
+    ]
+  ]
+};
+
+/**
+ * Demo action to show notification settings
+ */
+const showNotificationSettingsAction: Action = {
+  name: 'SHOW_NOTIFICATION_SETTINGS',
+  similes: ['NOTIFICATION_SETTINGS', 'ALERT_SETTINGS', 'PREFERENCES', 'SETTINGS'],
+  description: 'Shows notification settings and preferences with demo configuration',
+  validate: async (runtime: IAgentRuntime, message: Memory): Promise<boolean> => {
+    const text = message.content.text.toLowerCase();
+    return text.includes('settings') || 
+           text.includes('preferences') || 
+           text.includes('notification settings') ||
+           text.includes('configure');
+  },
+  handler: async (
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+  ): Promise<ActionResult> => {
+    try {
+      logger.info('⚙️ Fetching demo notification settings...');
+
+      // Demo settings data
+      const demoSettings = {
+        platforms: {
+          telegram: { enabled: true, chatId: '@your_telegram' },
+          discord: { enabled: true, webhook: 'Discord Webhook' },
+          email: { enabled: false, address: 'user@example.com' }
+        },
+        priceAlerts: {
+          enabled: true,
+          checkInterval: '1 minute',
+          minPriceChange: '5%',
+          maxAlertsPerHour: 10
+        },
+        governanceAlerts: {
+          newProposals: true,
+          votingReminders: true,
+          proposalResults: true,
+          checkInterval: '5 minutes'
+        },
+        tradingAlerts: {
+          positionUpdates: true,
+          orderFills: true,
+          marginCalls: true,
+          pnlUpdates: false
+        }
+      };
+
+      const response = `⚙️ **Notification Settings**
+
+📱 **Platforms:**
+• **Telegram:** ${demoSettings.platforms.telegram.enabled ? '✅ Enabled' : '❌ Disabled'} (${demoSettings.platforms.telegram.chatId})
+• **Discord:** ${demoSettings.platforms.discord.enabled ? '✅ Enabled' : '❌ Disabled'} (${demoSettings.platforms.discord.webhook})
+• **Email:** ${demoSettings.platforms.email.enabled ? '✅ Enabled' : '❌ Disabled'} (${demoSettings.platforms.email.address})
+
+💰 **Price Alerts:**
+• **Status:** ${demoSettings.priceAlerts.enabled ? '✅ Enabled' : '❌ Disabled'}
+• **Check Interval:** ${demoSettings.priceAlerts.checkInterval}
+• **Min Price Change:** ${demoSettings.priceAlerts.minPriceChange}
+• **Max Alerts/Hour:** ${demoSettings.priceAlerts.maxAlertsPerHour}
+
+🏛️ **Governance Alerts:**
+• **New Proposals:** ${demoSettings.governanceAlerts.newProposals ? '✅' : '❌'}
+• **Voting Reminders:** ${demoSettings.governanceAlerts.votingReminders ? '✅' : '❌'}
+• **Proposal Results:** ${demoSettings.governanceAlerts.proposalResults ? '✅' : '❌'}
+• **Check Interval:** ${demoSettings.governanceAlerts.checkInterval}
+
+📈 **Trading Alerts:**
+• **Position Updates:** ${demoSettings.tradingAlerts.positionUpdates ? '✅' : '❌'}
+• **Order Fills:** ${demoSettings.tradingAlerts.orderFills ? '✅' : '❌'}
+• **Margin Calls:** ${demoSettings.tradingAlerts.marginCalls ? '✅' : '❌'}
+• **P&L Updates:** ${demoSettings.tradingAlerts.pnlUpdates ? '✅' : '❌'}
+
+🎯 **Quick Actions:**
+• Say "enable email notifications" to activate email alerts
+• Say "disable trading alerts" to turn off trading notifications
+• Say "set check interval to 30 seconds" to change frequency
+
+💡 **Demo Note:** These are sample settings for demonstration purposes.`;
+
+      if (callback) {
+        callback({
+          text: response,
+          content: { 
+            success: true, 
+            settings: demoSettings 
+          },
+          action: 'SHOW_NOTIFICATION_SETTINGS'
+        });
+      }
+
+      return {
+        text: response,
+        content: { 
+          success: true, 
+          settings: demoSettings,
+          actions: ['SHOW_NOTIFICATION_SETTINGS']
+        }
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch settings';
+      logger.error({ error }, 'Demo settings fetch failed');
+
+      return {
+        text: `❌ Sorry, I couldn't fetch your notification settings. ${errorMessage}`,
+        content: { 
+          error: new Error(errorMessage),
+          success: false 
+        }
+      };
+    }
+  },
+  examples: [
+    [
+      {
+        user: '{{user1}}',
+        content: { text: 'Show notification settings' }
+      },
+      {
+        user: 'Sei Mate',
+        content: { 
+          text: '⚙️ **Notification Settings**\n\n📱 **Platforms:**\n• **Telegram:** ✅ Enabled (@your_telegram)\n• **Discord:** ✅ Enabled (Discord Webhook)\n• **Email:** ❌ Disabled (user@example.com)',
+          actions: ['SHOW_NOTIFICATION_SETTINGS']
+        }
+      }
+    ]
+  ]
+};
+
 export const notificationPlugin: Plugin = {
-  name: 'plugin-sei-notification',
+  name: 'notification',
   description: 'Provides notification functionality for SEI price alerts and governance proposals',
   config: {
     COINMARKETCAP_API_KEY: process.env.COINMARKETCAP_API_KEY,
@@ -942,7 +1234,7 @@ export const notificationPlugin: Plugin = {
   },
 
   services: [NotificationService],
-  actions: [setPriceAlertAction, setProposalAlertAction],
+  actions: [setPriceAlertAction, setProposalAlertAction, showActiveAlertsAction, showNotificationSettingsAction],
   providers: [],
 };
 
