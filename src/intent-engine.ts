@@ -154,15 +154,22 @@ export class IntentEngineService extends Service {
   private monitoringConfigs: Map<string, MonitoringConfig> = new Map();
   private executionTimer?: NodeJS.Timeout;
 
-  async initialize(runtime: IAgentRuntime): Promise<void> {
-    const config = configSchema.parse((runtime as any).config);
+  constructor(runtime?: IAgentRuntime) {
+    super(runtime);
+  }
+
+  async initialize(): Promise<void> {
+    // Get configuration from environment variables
+    const confidenceThreshold = parseFloat(process.env.CONFIDENCE_THRESHOLD || '0.7');
+    const maxExecutionSteps = parseInt(process.env.MAX_EXECUTION_STEPS || '10');
+    const analysisTimeout = parseInt(process.env.ANALYSIS_TIMEOUT || '30000');
     
-    this.aiProvider = (runtime.getService('ai-provider') as any) || {
+    this.aiProvider = (this.runtime!.getService('ai-provider') as any) || {
       analyzeText: async (text: string) => ({ sentiment: 'neutral', confidence: 0.5, summary: text })
     };
-    this.confidenceThreshold = config.CONFIDENCE_THRESHOLD;
-    this.maxExecutionSteps = config.MAX_EXECUTION_STEPS;
-    this.analysisTimeout = config.ANALYSIS_TIMEOUT;
+    this.confidenceThreshold = confidenceThreshold;
+    this.maxExecutionSteps = maxExecutionSteps;
+    this.analysisTimeout = analysisTimeout;
 
     logger.info('IntentEngineService initialized');
   }
@@ -173,9 +180,20 @@ export class IntentEngineService extends Service {
 
   static override async start(runtime: IAgentRuntime): Promise<Service> {
     logger.info('Starting intent engine service');
-    const service = new IntentEngineService();
-    await service.initialize(runtime);
+    const service = new IntentEngineService(runtime);
+    await service.initialize();
     return service;
+  }
+
+  static override async stop(runtime: IAgentRuntime): Promise<void> {
+    logger.info('Stopping intent engine service');
+    const service = runtime.getService(IntentEngineService.serviceType);
+    if (!service) {
+      throw new Error('Intent engine service not found');
+    }
+    if ('stop' in service && typeof service.stop === 'function') {
+      await service.stop();
+    }
   }
 
   /**

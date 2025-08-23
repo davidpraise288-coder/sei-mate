@@ -186,38 +186,52 @@ export class AutonomousGoalsService extends Service {
   private executionTimer?: NodeJS.Timeout;
   private priceCache: Map<string, { price: number; timestamp: Date }> = new Map();
 
-  async initialize(runtime: IAgentRuntime): Promise<void> {
-    const config = configSchema.parse((runtime as any).config);
+  constructor(runtime?: IAgentRuntime) {
+    super(runtime);
     
-    this.privateKey = config.SEI_PRIVATE_KEY;
-    this.rpcUrl = config.SEI_RPC_URL;
-    this.coinMarketCapApiKey = config.COINMARKETCAP_API_KEY;
-    this.executionIntervalMinutes = config.EXECUTION_INTERVAL_MINUTES;
-    this.maxConcurrentGoals = config.MAX_CONCURRENT_GOALS;
-    this.defaultSlippage = config.DEFAULT_SLIPPAGE;
+    // Initialize configuration from environment variables
+    this.privateKey = process.env.SEI_PRIVATE_KEY || '';
+    this.rpcUrl = process.env.SEI_RPC_URL || 'https://evm-rpc.sei-apis.com';
+    this.coinMarketCapApiKey = process.env.COINMARKETCAP_API_KEY;
+    this.executionIntervalMinutes = parseInt(process.env.EXECUTION_INTERVAL_MINUTES || '15');
+    this.maxConcurrentGoals = parseInt(process.env.MAX_CONCURRENT_GOALS || '10');
+    this.defaultSlippage = process.env.DEFAULT_SLIPPAGE || '1.0';
+  }
 
-    // Initialize account and clients
-    this.account = privateKeyToAccount(this.privateKey as `0x${string}`);
-    
-    this.walletClient = createWalletClient({
-      account: this.account,
-      chain: seiMainnet,
-      transport: http(this.rpcUrl),
-    });
+  async initialize(): Promise<void> {
+    // Validate required configuration
+    if (!this.privateKey) {
+      logger.warn('No private key provided, autonomous goals service will have limited functionality');
+      return;
+    }
 
-    this.publicClient = createPublicClient({
-      chain: seiMainnet,
-      transport: http(this.rpcUrl),
-    });
+    try {
+      // Initialize account and clients
+      this.account = privateKeyToAccount(this.privateKey as `0x${string}`);
+      
+      this.walletClient = createWalletClient({
+        account: this.account,
+        chain: seiMainnet,
+        transport: http(this.rpcUrl),
+      });
 
-    // Initialize Symphony
-    this.symphony = new Symphony();
-    this.symphony.connectWalletClient(this.walletClient);
+      this.publicClient = createPublicClient({
+        chain: seiMainnet,
+        transport: http(this.rpcUrl),
+      });
 
-    // Start autonomous execution engine
-    this.startExecutionEngine();
+      // Initialize Symphony
+      this.symphony = new Symphony();
+      this.symphony.connectWalletClient(this.walletClient);
 
-    logger.info('AutonomousGoalsService initialized for 24/7 goal seeking');
+      // Start autonomous execution engine
+      this.startExecutionEngine();
+
+      logger.info('AutonomousGoalsService initialized for 24/7 goal seeking');
+    } catch (error) {
+      logger.error('Failed to initialize AutonomousGoalsService:', error);
+      throw error;
+    }
   }
 
   override async stop(): Promise<void> {
@@ -229,8 +243,8 @@ export class AutonomousGoalsService extends Service {
 
   static override async start(runtime: IAgentRuntime): Promise<Service> {
     logger.info('Starting autonomous goals service');
-    const service = new AutonomousGoalsService();
-    await service.initialize(runtime);
+    const service = new AutonomousGoalsService(runtime);
+    await service.initialize();
     return service;
   }
 

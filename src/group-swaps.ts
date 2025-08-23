@@ -136,14 +136,28 @@ export class GroupSwapsService extends Service {
   private swapHistory: Map<string, SwapResult> = new Map();
   private userSwaps: Map<string, string[]> = new Map(); // userId -> swapIds
 
-  async initialize(runtime: IAgentRuntime): Promise<void> {
-    const config = configSchema.parse((runtime as any).config);
+  constructor(runtime?: IAgentRuntime) {
+    super(runtime);
+  }
+
+  async initialize(): Promise<void> {
+    // Get configuration from environment variables
+    const privateKey = process.env.SEI_PRIVATE_KEY || '';
+    const rpcUrl = process.env.SEI_RPC_URL || 'https://evm-rpc.sei-apis.com';
+    const minParticipants = parseInt(process.env.GROUP_SWAP_MIN_PARTICIPANTS || '3');
+    const maxParticipants = parseInt(process.env.GROUP_SWAP_MAX_PARTICIPANTS || '50');
+    const timeoutMinutes = parseInt(process.env.GROUP_SWAP_TIMEOUT_MINUTES || '30');
+
+    if (!privateKey) {
+      logger.warn('No private key provided, group swaps service will have limited functionality');
+      return;
+    }
     
-    this.privateKey = config.SEI_PRIVATE_KEY;
-    this.rpcUrl = config.SEI_RPC_URL;
-    this.minParticipants = config.GROUP_SWAP_MIN_PARTICIPANTS;
-    this.maxParticipants = config.GROUP_SWAP_MAX_PARTICIPANTS;
-    this.timeoutMinutes = config.GROUP_SWAP_TIMEOUT_MINUTES;
+    this.privateKey = privateKey;
+    this.rpcUrl = rpcUrl;
+    this.minParticipants = minParticipants;
+    this.maxParticipants = maxParticipants;
+    this.timeoutMinutes = timeoutMinutes;
 
     // Initialize account and clients
     const account = privateKeyToAccount(this.privateKey as `0x${string}`);
@@ -172,9 +186,20 @@ export class GroupSwapsService extends Service {
 
   static override async start(runtime: IAgentRuntime): Promise<Service> {
     logger.info('Starting group swaps service');
-    const service = new GroupSwapsService();
-    await service.initialize(runtime);
+    const service = new GroupSwapsService(runtime);
+    await service.initialize();
     return service;
+  }
+
+  static override async stop(runtime: IAgentRuntime): Promise<void> {
+    logger.info('Stopping group swaps service');
+    const service = runtime.getService(GroupSwapsService.serviceType);
+    if (!service) {
+      throw new Error('Group swaps service not found');
+    }
+    if ('stop' in service && typeof service.stop === 'function') {
+      await service.stop();
+    }
   }
 
   /**

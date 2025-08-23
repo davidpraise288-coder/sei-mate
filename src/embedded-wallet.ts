@@ -135,36 +135,50 @@ export class EmbeddedWalletService extends Service {
   private gasSponsorship: Map<string, GasSponsorship> = new Map();
   private communityConfigs: Map<string, CommunityWalletConfig> = new Map();
 
-  async initialize(runtime: IAgentRuntime): Promise<void> {
-    const config = configSchema.parse((runtime as any).config);
+  constructor(runtime?: IAgentRuntime) {
+    super(runtime);
     
-    this.privyAppId = config.PRIVY_APP_ID;
-    this.privyAppSecret = config.PRIVY_APP_SECRET;
-    this.sponsorPrivateKey = config.SPONSOR_PRIVATE_KEY;
-    this.initialBalance = config.INITIAL_BALANCE;
-    this.rpcUrl = config.SEI_RPC_URL;
+    // Initialize configuration from environment variables
+    this.privyAppId = process.env.PRIVY_APP_ID || '';
+    this.privyAppSecret = process.env.PRIVY_APP_SECRET || '';
+    this.sponsorPrivateKey = process.env.SPONSOR_PRIVATE_KEY || process.env.SEI_PRIVATE_KEY || '';
+    this.initialBalance = process.env.INITIAL_BALANCE || '0.05';
+    this.rpcUrl = process.env.SEI_RPC_URL || 'https://evm-rpc.sei-apis.com';
+  }
 
-    // Initialize wallet client for gas sponsorship
-    const sponsorAccount = privateKeyToAccount(this.sponsorPrivateKey as `0x${string}`);
-    
-    this.walletClient = createWalletClient({
-      account: sponsorAccount,
-      chain: seiMainnet,
-      transport: http(this.rpcUrl),
-    });
+  async initialize(): Promise<void> {
+    // Validate required configuration
+    if (!this.sponsorPrivateKey) {
+      logger.warn('No sponsor private key provided, embedded wallet service will have limited functionality');
+      return;
+    }
 
-    this.publicClient = createPublicClient({
-      chain: seiMainnet,
-      transport: http(this.rpcUrl),
-    });
+    try {
+      // Initialize wallet client for gas sponsorship
+      const sponsorAccount = privateKeyToAccount(this.sponsorPrivateKey as `0x${string}`);
+      
+      this.walletClient = createWalletClient({
+        account: sponsorAccount,
+        chain: seiMainnet,
+        transport: http(this.rpcUrl),
+      });
 
-    logger.info('EmbeddedWalletService initialized');
+      this.publicClient = createPublicClient({
+        chain: seiMainnet,
+        transport: http(this.rpcUrl),
+      });
+
+      logger.info('EmbeddedWalletService initialized');
+    } catch (error) {
+      logger.error('Failed to initialize EmbeddedWalletService:', error);
+      throw error;
+    }
   }
 
   static override async start(runtime: IAgentRuntime): Promise<Service> {
     logger.info('Starting embedded wallet service');
-    const service = new EmbeddedWalletService();
-    await service.initialize(runtime);
+    const service = new EmbeddedWalletService(runtime);
+    await service.initialize();
     return service;
   }
 

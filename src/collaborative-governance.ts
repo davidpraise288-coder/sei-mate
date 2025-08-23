@@ -128,15 +128,24 @@ export class CollaborativeGovernanceService extends Service {
   private analyzedProposals: Map<string, AnalyzedProposal> = new Map();
   private proposalMonitor?: NodeJS.Timeout;
 
-  async initialize(runtime: IAgentRuntime): Promise<void> {
-    const config = configSchema.parse((runtime as any).config);
+  constructor(runtime?: IAgentRuntime) {
+    super(runtime);
+  }
+
+  async initialize(): Promise<void> {
+    // Get configuration from environment variables
+    const rpcUrl = process.env.SEI_RPC_URL || 'https://rpc.sei-apis.com';
+    const restUrl = process.env.SEI_REST_URL || 'https://rest.sei-apis.com';
+    const chainId = process.env.SEI_CHAIN_ID || 'pacific-1';
+    const pollDurationHours = parseInt(process.env.POLL_DURATION_HOURS || '24');
+    const minPollParticipants = parseInt(process.env.MIN_POLL_PARTICIPANTS || '3');
     
-    this.rpcUrl = config.SEI_RPC_URL;
-    this.restUrl = config.SEI_REST_URL;
-    this.chainId = config.SEI_CHAIN_ID;
-    this.pollDurationHours = config.POLL_DURATION_HOURS;
-    this.minPollParticipants = config.MIN_POLL_PARTICIPANTS;
-    this.aiProvider = (runtime.getService('ai-provider') as any) || {
+    this.rpcUrl = rpcUrl;
+    this.restUrl = restUrl;
+    this.chainId = chainId;
+    this.pollDurationHours = pollDurationHours;
+    this.minPollParticipants = minPollParticipants;
+    this.aiProvider = (this.runtime!.getService('ai-provider') as any) || {
       analyzeText: async (text: string) => ({ sentiment: 'neutral', confidence: 0.5, summary: text })
     };
 
@@ -149,8 +158,8 @@ export class CollaborativeGovernanceService extends Service {
 
   static override async start(runtime: IAgentRuntime): Promise<Service> {
     logger.info('Starting collaborative governance service');
-    const service = new CollaborativeGovernanceService();
-    await service.initialize(runtime);
+    const service = new CollaborativeGovernanceService(runtime);
+    await service.initialize();
     return service;
   }
 
