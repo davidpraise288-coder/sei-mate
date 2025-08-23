@@ -171,6 +171,13 @@ export class IntentEngineService extends Service {
     logger.info('IntentEngineService stopped');
   }
 
+  static override async start(runtime: IAgentRuntime): Promise<Service> {
+    logger.info('Starting intent engine service');
+    const service = new IntentEngineService();
+    await service.initialize(runtime);
+    return service;
+  }
+
   /**
    * Parse user intent using AI
    */

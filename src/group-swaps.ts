@@ -170,6 +170,13 @@ export class GroupSwapsService extends Service {
     logger.info('GroupSwapsService stopped');
   }
 
+  static override async start(runtime: IAgentRuntime): Promise<Service> {
+    logger.info('Starting group swaps service');
+    const service = new GroupSwapsService();
+    await service.initialize(runtime);
+    return service;
+  }
+
   /**
    * Create a new group swap
    */

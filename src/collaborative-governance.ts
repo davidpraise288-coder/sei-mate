@@ -147,6 +147,24 @@ export class CollaborativeGovernanceService extends Service {
     logger.info('CollaborativeGovernanceService stopped');
   }
 
+  static override async start(runtime: IAgentRuntime): Promise<Service> {
+    logger.info('Starting collaborative governance service');
+    const service = new CollaborativeGovernanceService();
+    await service.initialize(runtime);
+    return service;
+  }
+
+  static override async stop(runtime: IAgentRuntime): Promise<void> {
+    logger.info('Stopping collaborative governance service');
+    const service = runtime.getService(CollaborativeGovernanceService.serviceType);
+    if (!service) {
+      throw new Error('Collaborative governance service not found');
+    }
+    if ('stop' in service && typeof service.stop === 'function') {
+      await service.stop();
+    }
+  }
+
   /**
    * Analyze a governance proposal using AI
    */

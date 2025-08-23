@@ -227,6 +227,24 @@ export class AutonomousGoalsService extends Service {
     logger.info('AutonomousGoalsService stopped');
   }
 
+  static override async start(runtime: IAgentRuntime): Promise<Service> {
+    logger.info('Starting autonomous goals service');
+    const service = new AutonomousGoalsService();
+    await service.initialize(runtime);
+    return service;
+  }
+
+  static override async stop(runtime: IAgentRuntime): Promise<void> {
+    logger.info('Stopping autonomous goals service');
+    const service = runtime.getService(AutonomousGoalsService.serviceType);
+    if (!service) {
+      throw new Error('Autonomous goals service not found');
+    }
+    if ('stop' in service && typeof service.stop === 'function') {
+      await service.stop();
+    }
+  }
+
   /**
    * Create DCA goal
    */

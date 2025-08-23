@@ -161,6 +161,24 @@ export class EmbeddedWalletService extends Service {
     logger.info('EmbeddedWalletService initialized');
   }
 
+  static override async start(runtime: IAgentRuntime): Promise<Service> {
+    logger.info('Starting embedded wallet service');
+    const service = new EmbeddedWalletService();
+    await service.initialize(runtime);
+    return service;
+  }
+
+  static override async stop(runtime: IAgentRuntime): Promise<void> {
+    logger.info('Stopping embedded wallet service');
+    const service = runtime.getService(EmbeddedWalletService.serviceType);
+    if (!service) {
+      throw new Error('Embedded wallet service not found');
+    }
+    if ('stop' in service && typeof service.stop === 'function') {
+      await service.stop();
+    }
+  }
+
   override async stop(): Promise<void> {
     logger.info('EmbeddedWalletService stopped');
   }
