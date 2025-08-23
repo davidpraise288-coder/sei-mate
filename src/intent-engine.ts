@@ -28,9 +28,9 @@ const configSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
-  INTENT_CONFIDENCE_THRESHOLD: z.number().default(0.7),
+  CONFIDENCE_THRESHOLD: z.number().default(0.7),
   MAX_EXECUTION_STEPS: z.number().default(10),
-  INTENT_ANALYSIS_TIMEOUT: z.number().default(30000),
+  ANALYSIS_TIMEOUT: z.number().default(30000),
 });
 
 /**
@@ -64,9 +64,12 @@ interface ExecutionStep {
   description: string;
   parameters: any;
   dependencies: string[];
-  status: 'pending' | 'completed' | 'failed';
+  status: 'pending' | 'executing' | 'completed' | 'failed';
   result?: any;
   error?: string;
+  startTime?: Date;
+  endTime?: Date;
+  actualDuration?: number;
 }
 
 /**
@@ -147,11 +150,14 @@ export class IntentEngineService extends Service {
   private intentHistory: Map<string, IntentExecution[]> = new Map();
   private userPreferences: Map<string, UserPreferences> = new Map();
   private executionCache: Map<string, ExecutionResult> = new Map();
+  private activeIntents: Map<string, UserIntent> = new Map();
+  private monitoringConfigs: Map<string, MonitoringConfig> = new Map();
+  private executionTimer?: NodeJS.Timeout;
 
   async initialize(runtime: IAgentRuntime): Promise<void> {
     const config = configSchema.parse((runtime as any).config);
     
-    this.aiProvider = runtime.getService<AIProvider>('ai-provider') || {
+    this.aiProvider = (runtime.getService('ai-provider') as any) || {
       analyzeText: async (text: string) => ({ sentiment: 'neutral', confidence: 0.5, summary: text })
     };
     this.confidenceThreshold = config.CONFIDENCE_THRESHOLD;
@@ -274,7 +280,7 @@ Examples:
           category: this.validateCategory(analysis.parsedIntent?.category) || 'general',
           complexity: this.validateComplexity(analysis.parsedIntent?.complexity) || 'simple',
           confidence: Math.min(Math.max(analysis.parsedIntent?.confidence || 0.5, 0), 1),
-          requiresConfirmation: analysis.parsedIntent?.requiresConfirmation || false,
+          // requiresConfirmation removed from interface
           riskLevel: this.validateRiskLevel(analysis.parsedIntent?.riskLevel) || 'low',
           timeline: this.validateTimeline(analysis.parsedIntent?.timeline) || 'immediate',
         },
@@ -333,7 +339,7 @@ Examples:
         category,
         complexity: 'simple',
         confidence: 0.6,
-        requiresConfirmation,
+        // requiresConfirmation removed from interface
         riskLevel,
         timeline: 'immediate',
       },
@@ -382,7 +388,7 @@ Examples:
 
       // Update intent status
       const allCompleted = intent.executionPlan.every(step => 
-        step.status === 'completed' || step.status === 'skipped'
+        step.status === 'completed'
       );
       const anyFailed = intent.executionPlan.some(step => step.status === 'failed');
 
@@ -670,7 +676,7 @@ const processComplexIntentAction: Action = {
       const complexityEmoji = intent.parsedIntent.complexity === 'complex' ? '🧠' :
                              intent.parsedIntent.complexity === 'moderate' ? '⚙️' : '⚡';
 
-      if (intent.parsedIntent.requiresConfirmation) {
+      if (intent.parsedIntent.riskLevel === 'high') {
         await callback({
           text: `🎯 **I understand your goal!**\n\n` +
                 `${complexityEmoji} **Goal**: ${intent.parsedIntent.goal}\n` +
@@ -748,7 +754,7 @@ const intentEngineProvider: Provider = {
     try {
       const service = runtime.getService<IntentEngineService>('intent-engine');
       if (!service) {
-        return { error: 'Service not available' };
+        return { data: { error: 'Service not available' } };
       }
 
       const userId = message.entityId;
@@ -775,7 +781,7 @@ const intentEngineProvider: Provider = {
       };
     } catch (error) {
       logger.error('Failed to get intent info:', error);
-      return { error: error.message };
+      return { data: { error: error.message } };
     }
   },
 };
@@ -790,9 +796,9 @@ export const intentEnginePlugin: Plugin = {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
-    INTENT_CONFIDENCE_THRESHOLD: parseFloat(process.env.INTENT_CONFIDENCE_THRESHOLD || '0.7'),
+    CONFIDENCE_THRESHOLD: parseFloat(process.env.CONFIDENCE_THRESHOLD || '0.7'),
     MAX_EXECUTION_STEPS: parseInt(process.env.MAX_EXECUTION_STEPS || '10'),
-    INTENT_ANALYSIS_TIMEOUT: parseInt(process.env.INTENT_ANALYSIS_TIMEOUT || '30000'),
+    ANALYSIS_TIMEOUT: parseInt(process.env.ANALYSIS_TIMEOUT || '30000'),
   },
   services: [IntentEngineService],
   actions: [processComplexIntentAction],

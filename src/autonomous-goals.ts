@@ -542,7 +542,7 @@ export class AutonomousGoalsService extends Service {
         return new Date() >= new Date(condition.value);
         
       case 'price':
-        const currentPrice = await this.getCurrentPrice(goal.parameters.token || 'SEI');
+        const currentPrice = await this.getTokenPrice(goal.parameters.token || 'SEI');
         return this.compareValues(currentPrice, condition.operator, parseFloat(condition.value));
         
       case 'balance':
@@ -1066,7 +1066,7 @@ const autonomousGoalsProvider: Provider = {
     try {
       const service = runtime.getService<AutonomousGoalsService>('autonomous-goals');
       if (!service) {
-        return { error: 'Service not available' };
+        return { data: { error: 'Service not available' } };
       }
 
       const userId = message.entityId;
@@ -1093,7 +1093,7 @@ const autonomousGoalsProvider: Provider = {
       };
     } catch (error) {
       logger.error('Failed to get autonomous goals info:', error);
-      return { error: error.message };
+      return { data: { error: error.message } };
     }
   },
 };

@@ -624,7 +624,7 @@ const groupSwapsProvider: Provider = {
     try {
       const service = runtime.getService<GroupSwapsService>('group-swaps');
       if (!service) {
-        return { error: 'Service not available' };
+        return { data: { error: 'Service not available' } };
       }
 
       const communityId = message.roomId;
@@ -646,7 +646,7 @@ const groupSwapsProvider: Provider = {
       };
     } catch (error) {
       logger.error('Failed to get group swaps info:', error);
-      return { error: error.message };
+      return { data: { error: error.message } };
     }
   },
 };

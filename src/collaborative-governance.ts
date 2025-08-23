@@ -27,14 +27,9 @@ import { AIProvider, type AIProviderConfig } from './utils/ai-provider.ts';
  * Configuration schema for collaborative governance
  */
 const configSchema = z.object({
-  GOV_RPC_URL: z.string().url().default('https://rpc.sei-apis.com'),
-  GOV_REST_URL: z.string().url().default('https://rest.sei-apis.com'),
-  SEI_MNEMONIC: z.string().optional(),
-  SEI_PRIVATE_KEY: z.string().optional(),
+  SEI_RPC_URL: z.string().url().default('https://rpc.sei-apis.com'),
+  SEI_REST_URL: z.string().url().default('https://rest.sei-apis.com'),
   SEI_CHAIN_ID: z.string().default('pacific-1'),
-  OPENAI_API_KEY: z.string().optional(),
-  ANTHROPIC_API_KEY: z.string().optional(),
-  OPENROUTER_API_KEY: z.string().optional(),
   POLL_DURATION_HOURS: z.number().default(24),
   MIN_POLL_PARTICIPANTS: z.number().default(3),
 });
@@ -130,6 +125,8 @@ export class CollaborativeGovernanceService extends Service {
   private activePolls: Map<string, CommunityPoll> = new Map();
   private pollHistory: Map<string, any> = new Map();
   private userVotes: Map<string, Map<string, string>> = new Map(); // userId -> pollId -> vote
+  private analyzedProposals: Map<string, AnalyzedProposal> = new Map();
+  private proposalMonitor?: NodeJS.Timeout;
 
   async initialize(runtime: IAgentRuntime): Promise<void> {
     const config = configSchema.parse((runtime as any).config);
@@ -139,7 +136,7 @@ export class CollaborativeGovernanceService extends Service {
     this.chainId = config.SEI_CHAIN_ID;
     this.pollDurationHours = config.POLL_DURATION_HOURS;
     this.minPollParticipants = config.MIN_POLL_PARTICIPANTS;
-    this.aiProvider = runtime.getService<AIProvider>('ai-provider') || {
+    this.aiProvider = (runtime.getService('ai-provider') as any) || {
       analyzeText: async (text: string) => ({ sentiment: 'neutral', confidence: 0.5, summary: text })
     };
 
@@ -412,7 +409,7 @@ Format as JSON with keys: shortSummary, pros, cons, riskLevel, recommendation, c
    * Get community poll
    */
   getCommunityPoll(pollId: string): CommunityPoll | null {
-    return this.communityPolls.get(pollId) || null;
+    return this.activePolls.get(pollId) || null;
   }
 
   /**
@@ -626,7 +623,7 @@ const collaborativeGovernanceProvider: Provider = {
     try {
       const service = runtime.getService<CollaborativeGovernanceService>('collaborative-governance');
       if (!service) {
-        return { error: 'Service not available' };
+        return { data: { error: 'Service not available' } };
       }
 
       const communityId = message.roomId;
@@ -650,7 +647,7 @@ const collaborativeGovernanceProvider: Provider = {
       };
     } catch (error) {
       logger.error('Failed to get governance info:', error);
-      return { error: error.message };
+      return { data: { error: error.message } };
     }
   },
 };
@@ -662,14 +659,9 @@ export const collaborativeGovernancePlugin: Plugin = {
   name: 'plugin-collaborative-governance',
   description: 'Provides AI-powered collaborative governance with proposal analysis and community polling',
   config: {
-    GOV_RPC_URL: process.env.GOV_RPC_URL || 'https://rpc.sei-apis.com',
-    GOV_REST_URL: process.env.GOV_REST_URL || 'https://rest.sei-apis.com',
-    SEI_MNEMONIC: process.env.SEI_MNEMONIC,
-    SEI_PRIVATE_KEY: process.env.SEI_PRIVATE_KEY,
+    SEI_RPC_URL: process.env.SEI_RPC_URL || 'https://rpc.sei-apis.com',
+    SEI_REST_URL: process.env.SEI_REST_URL || 'https://rest.sei-apis.com',
     SEI_CHAIN_ID: process.env.SEI_CHAIN_ID || 'pacific-1',
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     POLL_DURATION_HOURS: parseInt(process.env.POLL_DURATION_HOURS || '24'),
     MIN_POLL_PARTICIPANTS: parseInt(process.env.MIN_POLL_PARTICIPANTS || '3'),
   },

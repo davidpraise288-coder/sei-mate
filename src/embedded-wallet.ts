@@ -37,8 +37,8 @@ import { privateKeyToAccount } from 'viem/accounts';
 const configSchema = z.object({
   PRIVY_APP_ID: z.string().min(1, 'Privy App ID is required'),
   PRIVY_APP_SECRET: z.string().min(1, 'Privy App Secret is required'),
-  SEI_PRIVATE_KEY: z.string().min(1, 'SEI private key for gas sponsorship'),
-  COMMUNITY_WALLET_INITIAL_BALANCE: z.string().default('0.05'), // 0.05 SEI
+  SPONSOR_PRIVATE_KEY: z.string().min(1, 'Sponsor private key for gas sponsorship'),
+  INITIAL_BALANCE: z.string().default('0.05'), // 0.05 SEI
   SEI_RPC_URL: z.string().url().default('https://evm-rpc.sei-apis.com'),
 });
 
@@ -133,6 +133,7 @@ export class EmbeddedWalletService extends Service {
   private embeddedWallets: Map<string, EmbeddedWallet> = new Map();
   private transactionHistory: Map<string, TransactionRecord[]> = new Map();
   private gasSponsorship: Map<string, GasSponsorship> = new Map();
+  private communityConfigs: Map<string, CommunityWalletConfig> = new Map();
 
   async initialize(runtime: IAgentRuntime): Promise<void> {
     const config = configSchema.parse((runtime as any).config);
@@ -224,6 +225,7 @@ export class EmbeddedWalletService extends Service {
       
       const hash = await this.walletClient.sendTransaction({
         account: this.walletClient.account!,
+        chain: seiMainnet,
         to: wallet.address as Address,
         value: initialAmount,
       });
@@ -442,7 +444,7 @@ const embeddedWalletProvider: Provider = {
     try {
       const service = runtime.getService<EmbeddedWalletService>('embedded-wallet');
       if (!service) {
-        return { error: 'Service not available' };
+        return { data: { error: 'Service not available' } };
       }
 
       const userId = message.entityId;
@@ -469,7 +471,7 @@ const embeddedWalletProvider: Provider = {
       };
     } catch (error) {
       logger.error('Failed to get embedded wallet info:', error);
-      return { error: error.message };
+      return { data: { error: error.message } };
     }
   },
 };
@@ -483,8 +485,8 @@ export const embeddedWalletPlugin: Plugin = {
   config: {
     PRIVY_APP_ID: process.env.PRIVY_APP_ID,
     PRIVY_APP_SECRET: process.env.PRIVY_APP_SECRET,
-    SEI_PRIVATE_KEY: process.env.SEI_PRIVATE_KEY,
-    COMMUNITY_WALLET_INITIAL_BALANCE: process.env.COMMUNITY_WALLET_INITIAL_BALANCE || '0.05',
+    SPONSOR_PRIVATE_KEY: process.env.SPONSOR_PRIVATE_KEY,
+    INITIAL_BALANCE: process.env.INITIAL_BALANCE || '0.05',
     SEI_RPC_URL: process.env.SEI_RPC_URL || 'https://evm-rpc.sei-apis.com',
   },
   services: [EmbeddedWalletService],
