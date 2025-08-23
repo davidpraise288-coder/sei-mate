@@ -213,9 +213,13 @@ All advanced features maintain SEI Mate's security-first approach:
 
 **Essential Environment Variables**:
 ```bash
-# Core
-OPENAI_API_KEY=your_key        # For AI analysis
-SEI_PRIVATE_KEY=your_key       # For blockchain operations
+# Core AI Providers (choose any combination)
+OPENAI_API_KEY=sk-your_key       # OpenAI (GPT-4, GPT-3.5-turbo)
+ANTHROPIC_API_KEY=your_key       # Anthropic (Claude-3-Sonnet, Claude-3-Haiku)
+OPENROUTER_API_KEY=your_key      # OpenRouter (200+ models)
+SEI_PRIVATE_KEY=your_key         # For blockchain operations
+
+# See AI_PROVIDER_GUIDE.md for detailed AI provider setup
 
 # Embedded Wallets
 PRIVY_APP_ID=your_id          # For wallet creation

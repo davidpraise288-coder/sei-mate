@@ -19,6 +19,7 @@ import {
 } from '@elizaos/core';
 import { z } from 'zod';
 import axios from 'axios';
+import { AIProvider, type AIProviderConfig } from './utils/ai-provider.ts';
 
 /**
  * Configuration schema for intent engine
@@ -26,6 +27,7 @@ import axios from 'axios';
 const configSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
+  OPENROUTER_API_KEY: z.string().optional(),
   INTENT_CONFIDENCE_THRESHOLD: z.number().default(0.7),
   MAX_EXECUTION_STEPS: z.number().default(10),
   INTENT_ANALYSIS_TIMEOUT: z.number().default(30000),
@@ -100,8 +102,7 @@ export class IntentEngineService extends Service {
   override capabilityDescription =
     'Provides intent-based execution engine for complex multi-step strategies from natural language.';
 
-  private openaiApiKey?: string;
-  private anthropicApiKey?: string;
+  private aiProvider: AIProvider;
   private confidenceThreshold: number;
   private maxExecutionSteps: number;
   private analysisTimeout: number;
@@ -115,8 +116,17 @@ export class IntentEngineService extends Service {
   override async initialize(runtime: IAgentRuntime): Promise<void> {
     const config = configSchema.parse(runtime.config);
     
-    this.openaiApiKey = config.OPENAI_API_KEY;
-    this.anthropicApiKey = config.ANTHROPIC_API_KEY;
+    // Initialize AI provider
+    this.aiProvider = new AIProvider({
+      openaiApiKey: config.OPENAI_API_KEY,
+      anthropicApiKey: config.ANTHROPIC_API_KEY,
+      openrouterApiKey: config.OPENROUTER_API_KEY,
+      defaultModel: {
+        openai: 'gpt-4',
+        anthropic: 'claude-3-sonnet-20240229',
+        openrouter: 'anthropic/claude-3.5-sonnet',
+      },
+    });
     this.confidenceThreshold = config.INTENT_CONFIDENCE_THRESHOLD;
     this.maxExecutionSteps = config.MAX_EXECUTION_STEPS;
     this.analysisTimeout = config.INTENT_ANALYSIS_TIMEOUT;
@@ -218,11 +228,13 @@ Examples:
 
       let response: string;
       
-      if (this.openaiApiKey) {
-        response = await this.callOpenAI(prompt);
-      } else if (this.anthropicApiKey) {
-        response = await this.callAnthropic(prompt);
-      } else {
+      try {
+        response = await this.aiProvider.generateText(prompt, {
+          maxTokens: 2000,
+          temperature: 0.1,
+        });
+      } catch (error) {
+        logger.warn('AI provider failed, using fallback analysis:', error);
         return this.generateFallbackAnalysis(text);
       }
 
@@ -549,47 +561,7 @@ Examples:
     // Implementation for checking monitoring conditions
   }
 
-  /**
-   * API call helpers
-   */
-  private async callOpenAI(prompt: string): Promise<string> {
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: 'gpt-4',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${this.openaiApiKey}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-    
-    return response.data.choices[0].message.content;
-  }
 
-  private async callAnthropic(prompt: string): Promise<string> {
-    const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model: 'claude-3-sonnet-20240229',
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt }],
-      },
-      {
-        headers: {
-          'x-api-key': this.anthropicApiKey,
-          'Content-Type': 'application/json',
-          'anthropic-version': '2023-06-01',
-        },
-      }
-    );
-    
-    return response.data.content[0].text;
-  }
 
   /**
    * Get intent
@@ -793,6 +765,7 @@ export const intentEnginePlugin: Plugin = {
   config: {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     INTENT_CONFIDENCE_THRESHOLD: parseFloat(process.env.INTENT_CONFIDENCE_THRESHOLD || '0.7'),
     MAX_EXECUTION_STEPS: parseInt(process.env.MAX_EXECUTION_STEPS || '10'),
     INTENT_ANALYSIS_TIMEOUT: parseInt(process.env.INTENT_ANALYSIS_TIMEOUT || '30000'),

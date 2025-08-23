@@ -21,6 +21,7 @@ import { z } from 'zod';
 import axios from 'axios';
 import { SigningStargateClient, GasPrice } from '@cosmjs/stargate';
 import { DirectSecp256k1Wallet } from '@cosmjs/proto-signing';
+import { AIProvider, type AIProviderConfig } from './utils/ai-provider.ts';
 
 /**
  * Configuration schema for collaborative governance
@@ -33,6 +34,7 @@ const configSchema = z.object({
   SEI_CHAIN_ID: z.string().default('pacific-1'),
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
+  OPENROUTER_API_KEY: z.string().optional(),
   POLL_DURATION_HOURS: z.number().default(24),
   MIN_POLL_PARTICIPANTS: z.number().default(3),
 });
@@ -113,8 +115,7 @@ export class CollaborativeGovernanceService extends Service {
   private chainId: string;
   private pollDurationHours: number;
   private minPollParticipants: number;
-  private openaiApiKey?: string;
-  private anthropicApiKey?: string;
+  private aiProvider: AIProvider;
 
   // In-memory storage for demo (in production, use proper database)
   private analyzedProposals: Map<string, AnalyzedProposal> = new Map();
@@ -132,8 +133,18 @@ export class CollaborativeGovernanceService extends Service {
     this.chainId = config.SEI_CHAIN_ID;
     this.pollDurationHours = config.POLL_DURATION_HOURS;
     this.minPollParticipants = config.MIN_POLL_PARTICIPANTS;
-    this.openaiApiKey = config.OPENAI_API_KEY;
-    this.anthropicApiKey = config.ANTHROPIC_API_KEY;
+    
+    // Initialize AI provider
+    this.aiProvider = new AIProvider({
+      openaiApiKey: config.OPENAI_API_KEY,
+      anthropicApiKey: config.ANTHROPIC_API_KEY,
+      openrouterApiKey: config.OPENROUTER_API_KEY,
+      defaultModel: {
+        openai: 'gpt-4',
+        anthropic: 'claude-3-sonnet-20240229',
+        openrouter: 'anthropic/claude-3.5-sonnet',
+      },
+    });
 
     // Start proposal monitoring
     this.startProposalMonitoring();
@@ -209,12 +220,13 @@ Format as JSON with keys: shortSummary, pros, cons, riskLevel, recommendation, c
 
       let response: string;
       
-      if (this.openaiApiKey) {
-        response = await this.callOpenAI(prompt);
-      } else if (this.anthropicApiKey) {
-        response = await this.callAnthropic(prompt);
-      } else {
-        // Fallback to simple analysis
+      try {
+        response = await this.aiProvider.generateText(prompt, {
+          maxTokens: 1000,
+          temperature: 0.1,
+        });
+      } catch (error) {
+        logger.warn('AI provider failed, using fallback analysis:', error);
         return this.generateFallbackAnalysis(title, description);
       }
 
@@ -235,50 +247,7 @@ Format as JSON with keys: shortSummary, pros, cons, riskLevel, recommendation, c
     }
   }
 
-  /**
-   * Call OpenAI API
-   */
-  private async callOpenAI(prompt: string): Promise<string> {
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: 'gpt-4',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${this.openaiApiKey}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-    
-    return response.data.choices[0].message.content;
-  }
 
-  /**
-   * Call Anthropic API
-   */
-  private async callAnthropic(prompt: string): Promise<string> {
-    const response = await axios.post(
-      'https://api.anthropic.com/v1/messages',
-      {
-        model: 'claude-3-sonnet-20240229',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }],
-      },
-      {
-        headers: {
-          'x-api-key': this.anthropicApiKey,
-          'Content-Type': 'application/json',
-          'anthropic-version': '2023-06-01',
-        },
-      }
-    );
-    
-    return response.data.content[0].text;
-  }
 
   /**
    * Generate fallback analysis when AI is not available
@@ -692,6 +661,7 @@ export const collaborativeGovernancePlugin: Plugin = {
     SEI_CHAIN_ID: process.env.SEI_CHAIN_ID || 'pacific-1',
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     POLL_DURATION_HOURS: parseInt(process.env.POLL_DURATION_HOURS || '24'),
     MIN_POLL_PARTICIPANTS: parseInt(process.env.MIN_POLL_PARTICIPANTS || '3'),
   },
