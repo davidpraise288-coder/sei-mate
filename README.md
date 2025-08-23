@@ -119,10 +119,12 @@ Create a `.env` file with your configuration:
 # Database
 PGLITE_DATA_DIR=/workspace/eliza/sei-agent/.eliza/.elizadb
 
-# Choose your AI model provider
-OPENAI_API_KEY=your_openai_key              # Option 1: OpenAI
-OPENROUTER_API_KEY=your_openrouter_key      # Option 2: OpenRouter  
-OLLAMA_API_ENDPOINT=http://localhost:11434  # Option 3: Local Ollama
+# AI Providers (Multiple providers supported with auto-fallback)
+OPENAI_API_KEY=your_openai_key              # Option 1: OpenAI (GPT-4, GPT-3.5-turbo)
+ANTHROPIC_API_KEY=your_anthropic_key        # Option 2: Anthropic (Claude-3-Sonnet, Claude-3-Haiku)
+OPENROUTER_API_KEY=your_openrouter_key      # Option 3: OpenRouter (200+ models including Claude-3.5-Sonnet)
+
+# See AI_PROVIDER_GUIDE.md for detailed setup and configuration
 
 # SEI Blockchain (Required)
 SEI_NETWORK=mainnet
@@ -212,7 +214,7 @@ SEI Mate: "📈 Order executed! Position opened: 10 SEI-PERP LONG at $0.45"
 - **Framework**: [ElizaOS](https://github.com/elizaOS/eliza) - Web3-native AI agent framework
 - **Language**: TypeScript with comprehensive type safety
 - **Blockchain**: SEI Network with Symphony DEX and Citrex perpetuals
-- **AI Models**: OpenAI, OpenRouter, or local Ollama support
+- **AI Models**: OpenAI, Anthropic, and OpenRouter support with automatic fallback
 - **Database**: PGLite for efficient local storage
 - **Platforms**: Telegram, Discord (Twitter/X coming soon)
 
