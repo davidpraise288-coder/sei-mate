@@ -228,4 +228,54 @@ export class AIProvider {
       total: available.length,
     };
   }
+
+  /**
+   * Analyze text for sentiment, confidence, and summary
+   */
+  async analyzeText(text: string): Promise<{
+    sentiment: 'positive' | 'negative' | 'neutral';
+    confidence: number;
+    summary: string;
+  }> {
+    try {
+      const prompt = `Analyze the following text and provide:
+1. Sentiment (positive, negative, or neutral)
+2. Confidence level (0.0 to 1.0)
+3. A brief summary (2-3 sentences)
+
+Text: "${text}"
+
+Please respond in JSON format:
+{
+  "sentiment": "positive|negative|neutral",
+  "confidence": 0.85,
+  "summary": "Brief summary here"
+}`;
+
+      const response = await this.generateText(prompt, { maxTokens: 300, temperature: 0.1 });
+      
+      try {
+        const parsed = JSON.parse(response);
+        return {
+          sentiment: parsed.sentiment || 'neutral',
+          confidence: parsed.confidence || 0.5,
+          summary: parsed.summary || text.substring(0, 100) + '...'
+        };
+      } catch (parseError) {
+        // Fallback if JSON parsing fails
+        return {
+          sentiment: 'neutral',
+          confidence: 0.5,
+          summary: text.substring(0, 100) + '...'
+        };
+      }
+    } catch (error) {
+      // Fallback if AI analysis fails
+      return {
+        sentiment: 'neutral',
+        confidence: 0.5,
+        summary: text.substring(0, 100) + '...'
+      };
+    }
+  }
 }

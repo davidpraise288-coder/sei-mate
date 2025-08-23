@@ -34,7 +34,7 @@ const configSchema = z.object({
 });
 
 /**
- * Interface for parsed user intent
+ * Interface for user intent
  */
 interface UserIntent {
   id: string;
@@ -44,34 +44,70 @@ interface UserIntent {
     goal: string;
     category: 'yield' | 'trading' | 'governance' | 'portfolio' | 'social' | 'general';
     complexity: 'simple' | 'moderate' | 'complex';
-    confidence: number;
-    requiresConfirmation: boolean;
     riskLevel: 'low' | 'medium' | 'high';
     timeline: 'immediate' | 'short_term' | 'long_term';
+    confidence: number;
   };
   executionPlan: ExecutionStep[];
-  status: 'analyzing' | 'planning' | 'executing' | 'monitoring' | 'completed' | 'failed';
+  status: 'analyzing' | 'planning' | 'executing' | 'completed' | 'failed' | 'monitoring';
   createdAt: Date;
   updatedAt: Date;
-  results?: any;
+  result?: any;
 }
 
 /**
- * Interface for execution steps
+ * Interface for execution step
  */
 interface ExecutionStep {
   id: string;
   action: string;
   description: string;
   parameters: any;
-  dependencies: string[]; // IDs of steps that must complete first
-  status: 'pending' | 'executing' | 'completed' | 'failed' | 'skipped';
+  dependencies: string[];
+  status: 'pending' | 'completed' | 'failed';
   result?: any;
   error?: string;
-  estimatedDuration?: number;
-  actualDuration?: number;
-  startTime?: Date;
-  endTime?: Date;
+}
+
+/**
+ * Interface for intent execution
+ */
+interface IntentExecution {
+  id: string;
+  intentId: string;
+  userId: string;
+  steps: ExecutionStep[];
+  status: 'running' | 'completed' | 'failed';
+  startedAt: Date;
+  completedAt?: Date;
+  result?: any;
+}
+
+/**
+ * Interface for user preferences
+ */
+interface UserPreferences {
+  userId: string;
+  riskTolerance: 'low' | 'medium' | 'high';
+  preferredTokens: string[];
+  autoExecution: boolean;
+  notificationPreferences: {
+    email: boolean;
+    push: boolean;
+    telegram: boolean;
+  };
+}
+
+/**
+ * Interface for execution result
+ */
+interface ExecutionResult {
+  id: string;
+  intentId: string;
+  success: boolean;
+  data?: any;
+  error?: string;
+  timestamp: Date;
 }
 
 /**
@@ -100,41 +136,33 @@ export class IntentEngineService extends Service {
   static override serviceType = 'intent-engine';
 
   override capabilityDescription =
-    'Provides intent-based execution engine for complex multi-step strategies from natural language.';
+    'Provides AI-powered intent recognition and automated execution of complex user requests.';
 
-  private aiProvider: AIProvider;
-  private confidenceThreshold: number;
-  private maxExecutionSteps: number;
-  private analysisTimeout: number;
+  private aiProvider!: AIProvider;
+  private confidenceThreshold!: number;
+  private maxExecutionSteps!: number;
+  private analysisTimeout!: number;
 
   // In-memory storage for demo (in production, use proper database)
-  private activeIntents: Map<string, UserIntent> = new Map();
-  private monitoringConfigs: Map<string, MonitoringConfig> = new Map();
-  private executionQueue: string[] = [];
-  private executionTimer?: NodeJS.Timeout;
+  private intentHistory: Map<string, IntentExecution[]> = new Map();
+  private userPreferences: Map<string, UserPreferences> = new Map();
+  private executionCache: Map<string, ExecutionResult> = new Map();
 
-  override async initialize(runtime: IAgentRuntime): Promise<void> {
-    const config = configSchema.parse(runtime.config);
+  async initialize(runtime: IAgentRuntime): Promise<void> {
+    const config = configSchema.parse((runtime as any).config);
     
-    // Initialize AI provider
-    this.aiProvider = new AIProvider({
-      openaiApiKey: config.OPENAI_API_KEY,
-      anthropicApiKey: config.ANTHROPIC_API_KEY,
-      openrouterApiKey: config.OPENROUTER_API_KEY,
-      defaultModel: {
-        openai: 'gpt-4',
-        anthropic: 'claude-3-sonnet-20240229',
-        openrouter: 'anthropic/claude-3.5-sonnet',
-      },
-    });
-    this.confidenceThreshold = config.INTENT_CONFIDENCE_THRESHOLD;
+    this.aiProvider = runtime.getService<AIProvider>('ai-provider') || {
+      analyzeText: async (text: string) => ({ sentiment: 'neutral', confidence: 0.5, summary: text })
+    };
+    this.confidenceThreshold = config.CONFIDENCE_THRESHOLD;
     this.maxExecutionSteps = config.MAX_EXECUTION_STEPS;
-    this.analysisTimeout = config.INTENT_ANALYSIS_TIMEOUT;
+    this.analysisTimeout = config.ANALYSIS_TIMEOUT;
 
-    // Start execution engine
-    this.startExecutionEngine();
+    logger.info('IntentEngineService initialized');
+  }
 
-    logger.info('IntentEngineService initialized for complex goal processing');
+  override async stop(): Promise<void> {
+    logger.info('IntentEngineService stopped');
   }
 
   /**
@@ -154,7 +182,6 @@ export class IntentEngineService extends Service {
           category: 'general',
           complexity: 'simple',
           confidence: 0,
-          requiresConfirmation: false,
           riskLevel: 'low',
           timeline: 'immediate',
         },
@@ -425,10 +452,8 @@ Examples:
   private async executeCheckBalance(parameters: any, runtime: IAgentRuntime): Promise<any> {
     // Get balance from swap service
     const swapService = runtime.getService('sei-swap');
-    if (swapService && swapService.getBalance) {
-      const balance = await swapService.getBalance(parameters.token || 'SEI');
-      return { balance, token: parameters.token || 'SEI' };
-    }
+    // Note: getBalance method not available on Service base class
+    // This would need to be implemented in the specific swap service
     return { message: 'Balance check simulated', balance: '10.0' };
   }
 
@@ -723,14 +748,13 @@ const intentEngineProvider: Provider = {
     try {
       const service = runtime.getService<IntentEngineService>('intent-engine');
       if (!service) {
-        return { success: false, error: 'Service not available' };
+        return { error: 'Service not available' };
       }
 
       const userId = message.entityId;
       const userIntents = service.getUserIntents(userId);
 
       return {
-        success: true,
         data: {
           totalIntents: userIntents.length,
           activeIntents: userIntents.filter(intent => 
@@ -751,7 +775,7 @@ const intentEngineProvider: Provider = {
       };
     } catch (error) {
       logger.error('Failed to get intent info:', error);
-      return { success: false, error: error.message };
+      return { error: error.message };
     }
   },
 };

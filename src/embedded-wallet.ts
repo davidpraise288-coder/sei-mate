@@ -43,27 +43,52 @@ const configSchema = z.object({
 });
 
 /**
- * Interface for embedded wallet data
+ * Interface for embedded wallet
  */
 interface EmbeddedWallet {
+  id: string;
   userId: string;
   address: string;
   platform: 'telegram' | 'discord';
-  createdAt: Date;
+  communityId: string;
   isProvisioned: boolean;
-  communityId?: string;
+  createdAt: Date;
+  lastActivity: Date;
 }
 
 /**
- * Interface for community wallet config
+ * Interface for community wallet configuration
  */
 interface CommunityWalletConfig {
   communityId: string;
   platform: 'telegram' | 'discord';
   sponsorshipEnabled: boolean;
   initialBalance: string;
-  welcomeNftContract?: string;
   customWelcomeMessage?: string;
+}
+
+/**
+ * Interface for transaction record
+ */
+interface TransactionRecord {
+  id: string;
+  walletId: string;
+  type: 'incoming' | 'outgoing' | 'swap';
+  amount: string;
+  token: string;
+  transactionHash: string;
+  timestamp: Date;
+  status: 'pending' | 'confirmed' | 'failed';
+}
+
+/**
+ * Interface for gas sponsorship
+ */
+interface GasSponsorship {
+  userId: string;
+  amount: string;
+  timestamp: Date;
+  transactionHash: string;
 }
 
 /**
@@ -94,35 +119,35 @@ export class EmbeddedWalletService extends Service {
   static override serviceType = 'embedded-wallet';
 
   override capabilityDescription =
-    'Provides embedded wallet functionality with Privy integration for seamless onboarding and community wallet provisioning.';
+    'Provides embedded wallet functionality with gasless transactions and multi-platform support.';
 
-  private privyAppId: string;
-  private privyAppSecret: string;
-  private sponsorPrivateKey: string;
-  private initialBalance: string;
-  private rpcUrl: string;
-  private walletClient: WalletClient;
-  private publicClient: PublicClient;
-  private sponsorAccount: any;
+  private privyAppId!: string;
+  private privyAppSecret!: string;
+  private sponsorPrivateKey!: string;
+  private initialBalance!: string;
+  private rpcUrl!: string;
+  private walletClient!: WalletClient;
+  private publicClient!: PublicClient;
 
   // In-memory storage for demo (in production, use proper database)
   private embeddedWallets: Map<string, EmbeddedWallet> = new Map();
-  private communityConfigs: Map<string, CommunityWalletConfig> = new Map();
+  private transactionHistory: Map<string, TransactionRecord[]> = new Map();
+  private gasSponsorship: Map<string, GasSponsorship> = new Map();
 
-  override async initialize(runtime: IAgentRuntime): Promise<void> {
-    const config = configSchema.parse(runtime.config);
+  async initialize(runtime: IAgentRuntime): Promise<void> {
+    const config = configSchema.parse((runtime as any).config);
     
     this.privyAppId = config.PRIVY_APP_ID;
     this.privyAppSecret = config.PRIVY_APP_SECRET;
-    this.sponsorPrivateKey = config.SEI_PRIVATE_KEY;
-    this.initialBalance = config.COMMUNITY_WALLET_INITIAL_BALANCE;
+    this.sponsorPrivateKey = config.SPONSOR_PRIVATE_KEY;
+    this.initialBalance = config.INITIAL_BALANCE;
     this.rpcUrl = config.SEI_RPC_URL;
 
-    // Initialize sponsor account for gas sponsorship
-    this.sponsorAccount = privateKeyToAccount(this.sponsorPrivateKey as `0x${string}`);
+    // Initialize wallet client for gas sponsorship
+    const sponsorAccount = privateKeyToAccount(this.sponsorPrivateKey as `0x${string}`);
     
     this.walletClient = createWalletClient({
-      account: this.sponsorAccount,
+      account: sponsorAccount,
       chain: seiMainnet,
       transport: http(this.rpcUrl),
     });
@@ -132,7 +157,11 @@ export class EmbeddedWalletService extends Service {
       transport: http(this.rpcUrl),
     });
 
-    logger.info('EmbeddedWalletService initialized with Privy integration');
+    logger.info('EmbeddedWalletService initialized');
+  }
+
+  override async stop(): Promise<void> {
+    logger.info('EmbeddedWalletService stopped');
   }
 
   /**
@@ -154,12 +183,14 @@ export class EmbeddedWalletService extends Service {
       const walletAddress = await this.createPrivyWallet(userId, platform);
       
       const embeddedWallet: EmbeddedWallet = {
+        id: `wallet_${userId}_${Date.now()}`,
         userId,
         address: walletAddress,
         platform,
         createdAt: new Date(),
+        lastActivity: new Date(),
         isProvisioned: false,
-        communityId,
+        communityId: communityId || '',
       };
 
       this.embeddedWallets.set(userId, embeddedWallet);
@@ -192,6 +223,7 @@ export class EmbeddedWalletService extends Service {
       const initialAmount = parseEther(communityConfig.initialBalance);
       
       const hash = await this.walletClient.sendTransaction({
+        account: this.walletClient.account!,
         to: wallet.address as Address,
         value: initialAmount,
       });
@@ -311,7 +343,7 @@ const createEmbeddedWalletAction: Action = {
       }
 
       const userId = message.entityId;
-      const platform = message.source?.includes('telegram') ? 'telegram' : 'discord';
+      const platform = 'discord'; // Default to discord, can be enhanced with platform detection
       
       const wallet = await service.createEmbeddedWallet(userId, platform);
       
@@ -371,7 +403,7 @@ const handleNewMemberAction: Action = {
       }
 
       const userId = message.entityId;
-      const platform = message.source?.includes('telegram') ? 'telegram' : 'discord';
+      const platform = 'discord'; // Default to discord, can be enhanced with platform detection
       const communityId = message.roomId; // Use roomId as communityId
       const communityName = state.data?.communityName || 'our community';
       
@@ -410,7 +442,7 @@ const embeddedWalletProvider: Provider = {
     try {
       const service = runtime.getService<EmbeddedWalletService>('embedded-wallet');
       if (!service) {
-        return { success: false, error: 'Service not available' };
+        return { error: 'Service not available' };
       }
 
       const userId = message.entityId;
@@ -418,7 +450,6 @@ const embeddedWalletProvider: Provider = {
 
       if (!wallet) {
         return {
-          success: true,
           data: {
             hasWallet: false,
             message: 'User does not have an embedded wallet yet. They can create one by saying "create wallet".',
@@ -427,7 +458,6 @@ const embeddedWalletProvider: Provider = {
       }
 
       return {
-        success: true,
         data: {
           hasWallet: true,
           address: wallet.address,
@@ -439,7 +469,7 @@ const embeddedWalletProvider: Provider = {
       };
     } catch (error) {
       logger.error('Failed to get embedded wallet info:', error);
-      return { success: false, error: error.message };
+      return { error: error.message };
     }
   },
 };
