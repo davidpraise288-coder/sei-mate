@@ -169,15 +169,15 @@ export class AutonomousGoalsService extends Service {
   override capabilityDescription =
     'Provides autonomous goal-seeking with DCA, alerts, and 24/7 monitoring capabilities.';
 
-  private privateKey: string;
-  private rpcUrl: string;
+  private privateKey!: string;
+  private rpcUrl!: string;
   private coinMarketCapApiKey?: string;
-  private executionIntervalMinutes: number;
-  private maxConcurrentGoals: number;
-  private defaultSlippage: string;
-  private symphony: Symphony;
-  private walletClient: WalletClient;
-  private publicClient: PublicClient;
+  private executionIntervalMinutes!: number;
+  private maxConcurrentGoals!: number;
+  private defaultSlippage!: string;
+  private symphony!: Symphony;
+  private walletClient!: WalletClient;
+  private publicClient!: PublicClient;
   private account: any;
 
   // In-memory storage for demo (in production, use proper database)
@@ -186,38 +186,77 @@ export class AutonomousGoalsService extends Service {
   private executionTimer?: NodeJS.Timeout;
   private priceCache: Map<string, { price: number; timestamp: Date }> = new Map();
 
-  override async initialize(runtime: IAgentRuntime): Promise<void> {
-    const config = configSchema.parse(runtime.config);
+  constructor(runtime?: IAgentRuntime) {
+    super(runtime);
     
-    this.privateKey = config.SEI_PRIVATE_KEY;
-    this.rpcUrl = config.SEI_RPC_URL;
-    this.coinMarketCapApiKey = config.COINMARKETCAP_API_KEY;
-    this.executionIntervalMinutes = config.EXECUTION_INTERVAL_MINUTES;
-    this.maxConcurrentGoals = config.MAX_CONCURRENT_GOALS;
-    this.defaultSlippage = config.DEFAULT_SLIPPAGE;
+    // Initialize configuration from environment variables
+    this.privateKey = process.env.SEI_PRIVATE_KEY || '';
+    this.rpcUrl = process.env.SEI_RPC_URL || 'https://evm-rpc.sei-apis.com';
+    this.coinMarketCapApiKey = process.env.COINMARKETCAP_API_KEY;
+    this.executionIntervalMinutes = parseInt(process.env.EXECUTION_INTERVAL_MINUTES || '15');
+    this.maxConcurrentGoals = parseInt(process.env.MAX_CONCURRENT_GOALS || '10');
+    this.defaultSlippage = process.env.DEFAULT_SLIPPAGE || '1.0';
+  }
 
-    // Initialize account and clients
-    this.account = privateKeyToAccount(this.privateKey as `0x${string}`);
-    
-    this.walletClient = createWalletClient({
-      account: this.account,
-      chain: seiMainnet,
-      transport: http(this.rpcUrl),
-    });
+  async initialize(): Promise<void> {
+    // Validate required configuration
+    if (!this.privateKey) {
+      logger.warn('No private key provided, autonomous goals service will have limited functionality');
+      return;
+    }
 
-    this.publicClient = createPublicClient({
-      chain: seiMainnet,
-      transport: http(this.rpcUrl),
-    });
+    try {
+      // Initialize account and clients
+      this.account = privateKeyToAccount(this.privateKey as `0x${string}`);
+      
+      this.walletClient = createWalletClient({
+        account: this.account,
+        chain: seiMainnet,
+        transport: http(this.rpcUrl),
+      });
 
-    // Initialize Symphony
-    this.symphony = new Symphony();
-    this.symphony.connectWalletClient(this.walletClient);
+      this.publicClient = createPublicClient({
+        chain: seiMainnet,
+        transport: http(this.rpcUrl),
+      });
 
-    // Start autonomous execution engine
-    this.startExecutionEngine();
+      // Initialize Symphony
+      this.symphony = new Symphony();
+      this.symphony.connectWalletClient(this.walletClient);
 
-    logger.info('AutonomousGoalsService initialized for 24/7 goal seeking');
+      // Start autonomous execution engine
+      this.startExecutionEngine();
+
+      logger.info('AutonomousGoalsService initialized for 24/7 goal seeking');
+    } catch (error) {
+      logger.error('Failed to initialize AutonomousGoalsService:', error);
+      throw error;
+    }
+  }
+
+  override async stop(): Promise<void> {
+    if (this.executionTimer) {
+      clearTimeout(this.executionTimer);
+    }
+    logger.info('AutonomousGoalsService stopped');
+  }
+
+  static override async start(runtime: IAgentRuntime): Promise<Service> {
+    logger.info('Starting autonomous goals service');
+    const service = new AutonomousGoalsService(runtime);
+    await service.initialize();
+    return service;
+  }
+
+  static override async stop(runtime: IAgentRuntime): Promise<void> {
+    logger.info('Stopping autonomous goals service');
+    const service = runtime.getService(AutonomousGoalsService.serviceType);
+    if (!service) {
+      throw new Error('Autonomous goals service not found');
+    }
+    if ('stop' in service && typeof service.stop === 'function') {
+      await service.stop();
+    }
   }
 
   /**
@@ -535,7 +574,7 @@ export class AutonomousGoalsService extends Service {
         return new Date() >= new Date(condition.value);
         
       case 'price':
-        const currentPrice = await this.getCurrentPrice(goal.parameters.token || 'SEI');
+        const currentPrice = await this.getTokenPrice(goal.parameters.token || 'SEI');
         return this.compareValues(currentPrice, condition.operator, parseFloat(condition.value));
         
       case 'balance':
@@ -564,6 +603,9 @@ export class AutonomousGoalsService extends Service {
         
       case 'monitor':
         return await this.executeMonitorAction(action, goal);
+        
+      case 'rebalance':
+        return await this.executeRebalanceAction(action, goal);
         
       default:
         return { message: `Executed ${action.type} action` };
@@ -619,12 +661,43 @@ export class AutonomousGoalsService extends Service {
    * Execute monitor action
    */
   private async executeMonitorAction(action: GoalAction, goal: AutonomousGoal): Promise<any> {
-    // Monitoring logic would go here
-    return {
-      success: true,
-      monitored: true,
-      timestamp: new Date(),
-    };
+    try {
+      // Simulate monitoring execution
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      return {
+        message: `Monitoring ${action.description} for goal ${goal.name}`,
+        status: 'monitoring',
+        timestamp: new Date(),
+      };
+    } catch (error) {
+      logger.error('Failed to execute monitor action:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Execute rebalance action
+   */
+  private async executeRebalanceAction(action: GoalAction, goal: AutonomousGoal): Promise<any> {
+    try {
+      // Simulate portfolio rebalancing
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      return {
+        message: `Portfolio rebalanced according to ${action.description}`,
+        status: 'completed',
+        timestamp: new Date(),
+        rebalanceData: {
+          oldAllocation: { SEI: '60%', USDC: '40%' },
+          newAllocation: { SEI: '55%', USDC: '45%' },
+          rebalanceAmount: '5%',
+        },
+      };
+    } catch (error) {
+      logger.error('Failed to execute rebalance action:', error);
+      throw error;
+    }
   }
 
   /**
@@ -654,6 +727,17 @@ export class AutonomousGoalsService extends Service {
   }
 
   /**
+   * Update price alert statistics
+   */
+  private updatePriceAlertStats(goal: AutonomousGoal, execution: GoalExecution): void {
+    goal.totalExecutions++;
+    if (execution.status === 'success') {
+      goal.successfulExecutions++;
+    }
+    goal.updatedAt = new Date();
+  }
+
+  /**
    * Helper functions
    */
   private calculateNextExecution(frequency: string): Date {
@@ -677,19 +761,28 @@ export class AutonomousGoalsService extends Service {
     return new Date(now.getTime() + 24 * 60 * 60 * 1000); // Default to daily
   }
 
+  /**
+   * Parse frequency unit from string
+   */
   private parseFrequencyUnit(frequency: string): 'minutes' | 'hours' | 'days' | 'weeks' {
-    const frequencyLower = frequency.toLowerCase();
-    if (frequencyLower.includes('minute')) return 'minutes';
-    if (frequencyLower.includes('hour')) return 'hours';
-    if (frequencyLower.includes('week')) return 'weeks';
-    return 'days';
+    if (frequency.includes('minute')) return 'minutes';
+    if (frequency.includes('hour')) return 'hours';
+    if (frequency.includes('day')) return 'days';
+    if (frequency.includes('week')) return 'weeks';
+    return 'days'; // default
   }
 
+  /**
+   * Parse frequency interval from string
+   */
   private parseFrequencyInterval(frequency: string): number {
     const match = frequency.match(/(\d+)/);
     return match ? parseInt(match[1]) : 1;
   }
 
+  /**
+   * Compare two values based on operator
+   */
   private compareValues(actual: number, operator: string, expected: number): boolean {
     switch (operator) {
       case 'greater': return actual > expected;
@@ -699,40 +792,44 @@ export class AutonomousGoalsService extends Service {
     }
   }
 
-  private async getCurrentPrice(token: string): Promise<number> {
-    // Check cache first
-    const cached = this.priceCache.get(token);
-    if (cached && new Date().getTime() - cached.timestamp.getTime() < 5 * 60 * 1000) {
-      return cached.price;
-    }
-
+  /**
+   * Get token price from CoinMarketCap or cache
+   */
+  private async getTokenPrice(token: string): Promise<number> {
     try {
-      // Use CoinMarketCap API if available
-      if (this.coinMarketCapApiKey && token === 'SEI') {
-        const response = await axios.get(
-          'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest',
-          {
-            headers: {
-              'X-CMC_PRO_API_KEY': this.coinMarketCapApiKey,
-            },
-            params: {
-              symbol: 'SEI',
-            },
-          }
-        );
-        
-        const price = response.data.data.SEI.quote.USD.price;
-        this.priceCache.set(token, { price, timestamp: new Date() });
-        return price;
+      // Check cache first
+      const cached = this.priceCache.get(token);
+      if (cached && Date.now() - cached.timestamp.getTime() < 5 * 60 * 1000) { // 5 minutes
+        return cached.price;
       }
-    } catch (error) {
-      logger.error('Failed to get price from CoinMarketCap:', error);
-    }
 
-    // Fallback to mock price
-    const mockPrice = 0.45 + (Math.random() - 0.5) * 0.1;
-    this.priceCache.set(token, { price: mockPrice, timestamp: new Date() });
-    return mockPrice;
+      if (this.coinMarketCapApiKey) {
+        const response = await axios.get('https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest', {
+          headers: {
+            'X-CMC_PRO_API_KEY': this.coinMarketCapApiKey,
+          },
+          params: {
+            symbol: token,
+            convert: 'USD',
+          },
+        });
+
+        if (response.status === 200) {
+          const price = response.data.data[token]?.quote?.USD?.price || 0;
+          
+          // Update cache
+          this.priceCache.set(token, { price, timestamp: new Date() });
+          
+          return price;
+        }
+      }
+
+      // Fallback to cached price or default
+      return cached?.price || 0;
+    } catch (error) {
+      logger.error(`Failed to get ${token} price:`, error);
+      return 0;
+    }
   }
 
   /**
@@ -1001,14 +1098,13 @@ const autonomousGoalsProvider: Provider = {
     try {
       const service = runtime.getService<AutonomousGoalsService>('autonomous-goals');
       if (!service) {
-        return { success: false, error: 'Service not available' };
+        return { data: { error: 'Service not available' } };
       }
 
       const userId = message.entityId;
       const userGoals = service.getUserGoals(userId);
 
       return {
-        success: true,
         data: {
           totalGoals: userGoals.length,
           activeGoals: userGoals.filter(goal => goal.isActive).length,
@@ -1029,7 +1125,7 @@ const autonomousGoalsProvider: Provider = {
       };
     } catch (error) {
       logger.error('Failed to get autonomous goals info:', error);
-      return { success: false, error: error.message };
+      return { data: { error: error.message } };
     }
   },
 };

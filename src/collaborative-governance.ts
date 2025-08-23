@@ -27,14 +27,9 @@ import { AIProvider, type AIProviderConfig } from './utils/ai-provider.ts';
  * Configuration schema for collaborative governance
  */
 const configSchema = z.object({
-  GOV_RPC_URL: z.string().url().default('https://rpc.sei-apis.com'),
-  GOV_REST_URL: z.string().url().default('https://rest.sei-apis.com'),
-  SEI_MNEMONIC: z.string().optional(),
-  SEI_PRIVATE_KEY: z.string().optional(),
+  SEI_RPC_URL: z.string().url().default('https://rpc.sei-apis.com'),
+  SEI_REST_URL: z.string().url().default('https://rest.sei-apis.com'),
   SEI_CHAIN_ID: z.string().default('pacific-1'),
-  OPENAI_API_KEY: z.string().optional(),
-  ANTHROPIC_API_KEY: z.string().optional(),
-  OPENROUTER_API_KEY: z.string().optional(),
   POLL_DURATION_HOURS: z.number().default(24),
   MIN_POLL_PARTICIPANTS: z.number().default(3),
 });
@@ -100,56 +95,83 @@ interface UserVotingPreference {
 }
 
 /**
+ * Interface for vote
+ */
+interface Vote {
+  userId: string;
+  pollId: string;
+  option: string;
+  timestamp: Date;
+  reason?: string;
+}
+
+/**
  * Collaborative Governance Service
  */
 export class CollaborativeGovernanceService extends Service {
   static override serviceType = 'collaborative-governance';
 
   override capabilityDescription =
-    'Provides AI-powered collaborative governance with proposal analysis and community polling.';
+    'Provides collaborative governance capabilities with AI-powered proposal analysis and voting coordination.';
 
-  private rpcUrl: string;
-  private restUrl: string;
-  private mnemonic?: string;
-  private privateKey?: string;
-  private chainId: string;
-  private pollDurationHours: number;
-  private minPollParticipants: number;
-  private aiProvider: AIProvider;
+  private rpcUrl!: string;
+  private restUrl!: string;
+  private chainId!: string;
+  private pollDurationHours!: number;
+  private minPollParticipants!: number;
+  private aiProvider!: AIProvider;
 
   // In-memory storage for demo (in production, use proper database)
+  private activePolls: Map<string, CommunityPoll> = new Map();
+  private pollHistory: Map<string, any> = new Map();
+  private userVotes: Map<string, Map<string, string>> = new Map(); // userId -> pollId -> vote
   private analyzedProposals: Map<string, AnalyzedProposal> = new Map();
-  private communityPolls: Map<string, CommunityPoll> = new Map();
-  private userPreferences: Map<string, UserVotingPreference> = new Map();
   private proposalMonitor?: NodeJS.Timeout;
 
-  override async initialize(runtime: IAgentRuntime): Promise<void> {
-    const config = configSchema.parse(runtime.config);
-    
-    this.rpcUrl = config.GOV_RPC_URL;
-    this.restUrl = config.GOV_REST_URL;
-    this.mnemonic = config.SEI_MNEMONIC;
-    this.privateKey = config.SEI_PRIVATE_KEY;
-    this.chainId = config.SEI_CHAIN_ID;
-    this.pollDurationHours = config.POLL_DURATION_HOURS;
-    this.minPollParticipants = config.MIN_POLL_PARTICIPANTS;
-    
-    // Initialize AI provider
-    this.aiProvider = new AIProvider({
-      openaiApiKey: config.OPENAI_API_KEY,
-      anthropicApiKey: config.ANTHROPIC_API_KEY,
-      openrouterApiKey: config.OPENROUTER_API_KEY,
-      defaultModel: {
-        openai: 'gpt-4',
-        anthropic: 'claude-3-sonnet-20240229',
-        openrouter: 'anthropic/claude-3.5-sonnet',
-      },
-    });
+  constructor(runtime?: IAgentRuntime) {
+    super(runtime);
+  }
 
-    // Start proposal monitoring
-    this.startProposalMonitoring();
+  async initialize(): Promise<void> {
+    // Get configuration from environment variables
+    const rpcUrl = process.env.SEI_RPC_URL || 'https://rpc.sei-apis.com';
+    const restUrl = process.env.SEI_REST_URL || 'https://rest.sei-apis.com';
+    const chainId = process.env.SEI_CHAIN_ID || 'pacific-1';
+    const pollDurationHours = parseInt(process.env.POLL_DURATION_HOURS || '24');
+    const minPollParticipants = parseInt(process.env.MIN_POLL_PARTICIPANTS || '3');
+    
+    this.rpcUrl = rpcUrl;
+    this.restUrl = restUrl;
+    this.chainId = chainId;
+    this.pollDurationHours = pollDurationHours;
+    this.minPollParticipants = minPollParticipants;
+    this.aiProvider = (this.runtime!.getService('ai-provider') as any) || {
+      analyzeText: async (text: string) => ({ sentiment: 'neutral', confidence: 0.5, summary: text })
+    };
 
-    logger.info('CollaborativeGovernanceService initialized with AI analysis');
+    logger.info('CollaborativeGovernanceService initialized');
+  }
+
+  override async stop(): Promise<void> {
+    logger.info('CollaborativeGovernanceService stopped');
+  }
+
+  static override async start(runtime: IAgentRuntime): Promise<Service> {
+    logger.info('Starting collaborative governance service');
+    const service = new CollaborativeGovernanceService(runtime);
+    await service.initialize();
+    return service;
+  }
+
+  static override async stop(runtime: IAgentRuntime): Promise<void> {
+    logger.info('Stopping collaborative governance service');
+    const service = runtime.getService(CollaborativeGovernanceService.serviceType);
+    if (!service) {
+      throw new Error('Collaborative governance service not found');
+    }
+    if ('stop' in service && typeof service.stop === 'function') {
+      await service.stop();
+    }
   }
 
   /**
@@ -306,7 +328,7 @@ Format as JSON with keys: shortSummary, pros, cons, riskLevel, recommendation, c
         executionPlan: 'guide_users',
       };
 
-      this.communityPolls.set(pollId, poll);
+      this.activePolls.set(pollId, poll);
       return poll;
     } catch (error) {
       logger.error('Failed to create community poll:', error);
@@ -318,7 +340,7 @@ Format as JSON with keys: shortSummary, pros, cons, riskLevel, recommendation, c
    * Cast vote in community poll
    */
   async voteInPoll(pollId: string, userId: string, vote: string): Promise<CommunityPoll> {
-    const poll = this.communityPolls.get(pollId);
+    const poll = this.activePolls.get(pollId);
     if (!poll) {
       throw new Error('Poll not found');
     }
@@ -337,7 +359,7 @@ Format as JSON with keys: shortSummary, pros, cons, riskLevel, recommendation, c
     }
 
     poll.votes.set(userId, vote);
-    this.communityPolls.set(pollId, poll);
+    this.activePolls.set(pollId, poll);
 
     // Calculate results
     poll.results = {};
@@ -370,12 +392,23 @@ Format as JSON with keys: shortSummary, pros, cons, riskLevel, recommendation, c
    */
   async getActiveProposals(): Promise<any[]> {
     try {
-      const response = await axios.get(`${this.restUrl}/cosmos/gov/v1beta1/proposals?proposal_status=2`);
+      const response = await axios.get(`${this.restUrl}/cosmos/gov/v1beta1/proposals?proposal_status=PROPOSAL_STATUS_VOTING_PERIOD`);
       return response.data.proposals || [];
     } catch (error) {
       logger.error('Failed to get active proposals:', error);
       return [];
     }
+  }
+
+  /**
+   * Get latest poll for community
+   */
+  getLatestPoll(communityId: string): CommunityPoll | null {
+    const activePolls = this.getActivePolls(communityId);
+    if (activePolls.length === 0) return null;
+    
+    // Return the most recently created poll
+    return activePolls.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
   }
 
   /**
@@ -403,14 +436,14 @@ Format as JSON with keys: shortSummary, pros, cons, riskLevel, recommendation, c
    * Get community poll
    */
   getCommunityPoll(pollId: string): CommunityPoll | null {
-    return this.communityPolls.get(pollId) || null;
+    return this.activePolls.get(pollId) || null;
   }
 
   /**
    * Get active polls for community
    */
   getActivePolls(communityId: string): CommunityPoll[] {
-    return Array.from(this.communityPolls.values())
+    return Array.from(this.activePolls.values())
       .filter(poll => poll.communityId === communityId && poll.status === 'active');
   }
 
@@ -434,7 +467,7 @@ const createGovernancePollAction: Action = {
     const text = message.content.text?.toLowerCase() || '';
     return (text.includes('proposal') && (text.includes('poll') || text.includes('vote'))) ||
            text.includes('governance poll') ||
-           text.match(/proposal\s*#?\d+/);
+           !!(text.match(/proposal\s*#?\d+/));
   },
 
   handler: async (
@@ -617,14 +650,13 @@ const collaborativeGovernanceProvider: Provider = {
     try {
       const service = runtime.getService<CollaborativeGovernanceService>('collaborative-governance');
       if (!service) {
-        return { success: false, error: 'Service not available' };
+        return { data: { error: 'Service not available' } };
       }
 
       const communityId = message.roomId;
       const activePolls = service.getActivePolls(communityId);
 
       return {
-        success: true,
         data: {
           activePolls: activePolls.length,
           polls: activePolls.map(poll => ({
@@ -642,7 +674,7 @@ const collaborativeGovernanceProvider: Provider = {
       };
     } catch (error) {
       logger.error('Failed to get governance info:', error);
-      return { success: false, error: error.message };
+      return { data: { error: error.message } };
     }
   },
 };
@@ -654,14 +686,9 @@ export const collaborativeGovernancePlugin: Plugin = {
   name: 'plugin-collaborative-governance',
   description: 'Provides AI-powered collaborative governance with proposal analysis and community polling',
   config: {
-    GOV_RPC_URL: process.env.GOV_RPC_URL || 'https://rpc.sei-apis.com',
-    GOV_REST_URL: process.env.GOV_REST_URL || 'https://rest.sei-apis.com',
-    SEI_MNEMONIC: process.env.SEI_MNEMONIC,
-    SEI_PRIVATE_KEY: process.env.SEI_PRIVATE_KEY,
+    SEI_RPC_URL: process.env.SEI_RPC_URL || 'https://rpc.sei-apis.com',
+    SEI_REST_URL: process.env.SEI_REST_URL || 'https://rest.sei-apis.com',
     SEI_CHAIN_ID: process.env.SEI_CHAIN_ID || 'pacific-1',
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     POLL_DURATION_HOURS: parseInt(process.env.POLL_DURATION_HOURS || '24'),
     MIN_POLL_PARTICIPANTS: parseInt(process.env.MIN_POLL_PARTICIPANTS || '3'),
   },

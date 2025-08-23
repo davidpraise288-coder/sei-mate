@@ -65,13 +65,31 @@ interface GroupSwap {
 }
 
 /**
- * Interface for participant data
+ * Interface for group swap participant
  */
 interface GroupSwapParticipant {
   userId: string;
-  username?: string;
   amount: string;
-  confirmedAt: Date;
+  joinedAt: Date;
+  status: 'active' | 'withdrawn';
+}
+
+/**
+ * Interface for swap result
+ */
+interface SwapResult {
+  id: string;
+  groupSwapId: string;
+  participants: string[];
+  totalAmount: string;
+  fromToken: string;
+  toToken: string;
+  actualPrice: string;
+  estimatedPrice: string;
+  transactionHash: string;
+  executedAt: Date;
+  gasUsed: string;
+  status: 'success' | 'failed' | 'partial';
 }
 
 /**
@@ -102,36 +120,50 @@ export class GroupSwapsService extends Service {
   static override serviceType = 'group-swaps';
 
   override capabilityDescription =
-    'Provides group swap functionality for community crowdbuys with better pricing and reduced fees.';
+    'Provides group swap functionality for coordinated token exchanges with community participation.';
 
-  private privateKey: string;
-  private rpcUrl: string;
-  private minParticipants: number;
-  private maxParticipants: number;
-  private timeoutMinutes: number;
-  private symphony: Symphony;
-  private walletClient: WalletClient;
-  private publicClient: PublicClient;
-  private account: any;
+  private privateKey!: string;
+  private rpcUrl!: string;
+  private minParticipants!: number;
+  private maxParticipants!: number;
+  private timeoutMinutes!: number;
+  private symphony!: Symphony;
+  private walletClient!: WalletClient;
+  private publicClient!: PublicClient;
 
   // In-memory storage for demo (in production, use proper database)
-  private activeGroupSwaps: Map<string, GroupSwap> = new Map();
-  private userParticipations: Map<string, string[]> = new Map(); // userId -> groupSwapIds
+  private activeSwaps: Map<string, GroupSwap> = new Map();
+  private swapHistory: Map<string, SwapResult> = new Map();
+  private userSwaps: Map<string, string[]> = new Map(); // userId -> swapIds
 
-  override async initialize(runtime: IAgentRuntime): Promise<void> {
-    const config = configSchema.parse(runtime.config);
+  constructor(runtime?: IAgentRuntime) {
+    super(runtime);
+  }
+
+  async initialize(): Promise<void> {
+    // Get configuration from environment variables
+    const privateKey = process.env.SEI_PRIVATE_KEY || '';
+    const rpcUrl = process.env.SEI_RPC_URL || 'https://evm-rpc.sei-apis.com';
+    const minParticipants = parseInt(process.env.GROUP_SWAP_MIN_PARTICIPANTS || '3');
+    const maxParticipants = parseInt(process.env.GROUP_SWAP_MAX_PARTICIPANTS || '50');
+    const timeoutMinutes = parseInt(process.env.GROUP_SWAP_TIMEOUT_MINUTES || '30');
+
+    if (!privateKey) {
+      logger.warn('No private key provided, group swaps service will have limited functionality');
+      return;
+    }
     
-    this.privateKey = config.SEI_PRIVATE_KEY;
-    this.rpcUrl = config.SEI_RPC_URL;
-    this.minParticipants = config.GROUP_SWAP_MIN_PARTICIPANTS;
-    this.maxParticipants = config.GROUP_SWAP_MAX_PARTICIPANTS;
-    this.timeoutMinutes = config.GROUP_SWAP_TIMEOUT_MINUTES;
+    this.privateKey = privateKey;
+    this.rpcUrl = rpcUrl;
+    this.minParticipants = minParticipants;
+    this.maxParticipants = maxParticipants;
+    this.timeoutMinutes = timeoutMinutes;
 
     // Initialize account and clients
-    this.account = privateKeyToAccount(this.privateKey as `0x${string}`);
+    const account = privateKeyToAccount(this.privateKey as `0x${string}`);
     
     this.walletClient = createWalletClient({
-      account: this.account,
+      account,
       chain: seiMainnet,
       transport: http(this.rpcUrl),
     });
@@ -145,10 +177,29 @@ export class GroupSwapsService extends Service {
     this.symphony = new Symphony();
     this.symphony.connectWalletClient(this.walletClient);
 
-    // Start cleanup timer for expired swaps
-    this.startCleanupTimer();
+    logger.info('GroupSwapsService initialized');
+  }
 
-    logger.info('GroupSwapsService initialized for community crowdbuys');
+  override async stop(): Promise<void> {
+    logger.info('GroupSwapsService stopped');
+  }
+
+  static override async start(runtime: IAgentRuntime): Promise<Service> {
+    logger.info('Starting group swaps service');
+    const service = new GroupSwapsService(runtime);
+    await service.initialize();
+    return service;
+  }
+
+  static override async stop(runtime: IAgentRuntime): Promise<void> {
+    logger.info('Stopping group swaps service');
+    const service = runtime.getService(GroupSwapsService.serviceType);
+    if (!service) {
+      throw new Error('Group swaps service not found');
+    }
+    if ('stop' in service && typeof service.stop === 'function') {
+      await service.stop();
+    }
   }
 
   /**
@@ -192,12 +243,12 @@ export class GroupSwapsService extends Service {
         estimatedPrice,
       };
 
-      this.activeGroupSwaps.set(groupSwapId, groupSwap);
+      this.activeSwaps.set(groupSwapId, groupSwap);
       
       // Add to user participations
-      const userParticipations = this.userParticipations.get(creatorId) || [];
+      const userParticipations = this.userSwaps.get(creatorId) || [];
       userParticipations.push(groupSwapId);
-      this.userParticipations.set(creatorId, userParticipations);
+      this.userSwaps.set(creatorId, userParticipations);
 
       logger.info(`Created group swap ${groupSwapId} for ${communityId}`);
       return groupSwap;
@@ -216,7 +267,7 @@ export class GroupSwapsService extends Service {
     customAmount?: string
   ): Promise<GroupSwap> {
     try {
-      const groupSwap = this.activeGroupSwaps.get(groupSwapId);
+      const groupSwap = this.activeSwaps.get(groupSwapId);
       if (!groupSwap) {
         throw new Error('Group swap not found');
       }
@@ -250,16 +301,16 @@ export class GroupSwapsService extends Service {
       groupSwap.totalPooled = (currentTotal + newAmount).toString();
 
       // Add to user participations
-      const userParticipations = this.userParticipations.get(userId) || [];
+      const userParticipations = this.userSwaps.get(userId) || [];
       userParticipations.push(groupSwapId);
-      this.userParticipations.set(userId, userParticipations);
+      this.userSwaps.set(userId, userParticipations);
 
       // Check if we've reached target participants
       if (groupSwap.currentParticipants.length >= groupSwap.targetParticipants) {
         groupSwap.status = 'ready';
       }
 
-      this.activeGroupSwaps.set(groupSwapId, groupSwap);
+      this.activeSwaps.set(groupSwapId, groupSwap);
 
       logger.info(`User ${userId} joined group swap ${groupSwapId}`);
       return groupSwap;
@@ -274,7 +325,7 @@ export class GroupSwapsService extends Service {
    */
   async executeGroupSwap(groupSwapId: string): Promise<GroupSwap> {
     try {
-      const groupSwap = this.activeGroupSwaps.get(groupSwapId);
+      const groupSwap = this.activeSwaps.get(groupSwapId);
       if (!groupSwap) {
         throw new Error('Group swap not found');
       }
@@ -298,7 +349,7 @@ export class GroupSwapsService extends Service {
       groupSwap.transactionHash = swapResult.swapReceipt.transactionHash;
       groupSwap.actualPrice = route.amountOutFormatted;
 
-      this.activeGroupSwaps.set(groupSwapId, groupSwap);
+      this.activeSwaps.set(groupSwapId, groupSwap);
 
       logger.info(`Executed group swap ${groupSwapId} with tx: ${groupSwap.transactionHash}`);
       return groupSwap;
@@ -306,10 +357,10 @@ export class GroupSwapsService extends Service {
       logger.error('Failed to execute group swap:', error);
       
       // Mark as cancelled on failure
-      const groupSwap = this.activeGroupSwaps.get(groupSwapId);
+      const groupSwap = this.activeSwaps.get(groupSwapId);
       if (groupSwap) {
         groupSwap.status = 'cancelled';
-        this.activeGroupSwaps.set(groupSwapId, groupSwap);
+        this.activeSwaps.set(groupSwapId, groupSwap);
       }
       
       throw error;
@@ -341,7 +392,7 @@ export class GroupSwapsService extends Service {
    * Get active group swaps for a community
    */
   getActiveGroupSwaps(communityId: string): GroupSwap[] {
-    return Array.from(this.activeGroupSwaps.values())
+    return Array.from(this.activeSwaps.values())
       .filter(swap => swap.communityId === communityId && swap.status === 'active');
   }
 
@@ -349,14 +400,14 @@ export class GroupSwapsService extends Service {
    * Get group swap by ID
    */
   getGroupSwap(groupSwapId: string): GroupSwap | null {
-    return this.activeGroupSwaps.get(groupSwapId) || null;
+    return this.activeSwaps.get(groupSwapId) || null;
   }
 
   /**
    * Cancel a group swap (only creator can cancel)
    */
   async cancelGroupSwap(groupSwapId: string, userId: string): Promise<GroupSwap> {
-    const groupSwap = this.activeGroupSwaps.get(groupSwapId);
+    const groupSwap = this.activeSwaps.get(groupSwapId);
     if (!groupSwap) {
       throw new Error('Group swap not found');
     }
@@ -370,7 +421,7 @@ export class GroupSwapsService extends Service {
     }
 
     groupSwap.status = 'cancelled';
-    this.activeGroupSwaps.set(groupSwapId, groupSwap);
+    this.activeSwaps.set(groupSwapId, groupSwap);
 
     return groupSwap;
   }
@@ -381,10 +432,10 @@ export class GroupSwapsService extends Service {
   private startCleanupTimer(): void {
     setInterval(() => {
       const now = new Date();
-      for (const [id, swap] of this.activeGroupSwaps.entries()) {
+      for (const [id, swap] of this.activeSwaps.entries()) {
         if (swap.status === 'active' && now > swap.expiresAt) {
           swap.status = 'expired';
-          this.activeGroupSwaps.set(id, swap);
+          this.activeSwaps.set(id, swap);
           logger.info(`Group swap ${id} expired`);
         }
       }
@@ -605,14 +656,13 @@ const groupSwapsProvider: Provider = {
     try {
       const service = runtime.getService<GroupSwapsService>('group-swaps');
       if (!service) {
-        return { success: false, error: 'Service not available' };
+        return { data: { error: 'Service not available' } };
       }
 
       const communityId = message.roomId;
       const activeSwaps = service.getActiveGroupSwaps(communityId);
 
       return {
-        success: true,
         data: {
           activeSwaps: activeSwaps.length,
           swaps: activeSwaps.map(swap => ({
@@ -628,7 +678,7 @@ const groupSwapsProvider: Provider = {
       };
     } catch (error) {
       logger.error('Failed to get group swaps info:', error);
-      return { success: false, error: error.message };
+      return { data: { error: error.message } };
     }
   },
 };

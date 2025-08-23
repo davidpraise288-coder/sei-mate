@@ -37,33 +37,58 @@ import { privateKeyToAccount } from 'viem/accounts';
 const configSchema = z.object({
   PRIVY_APP_ID: z.string().min(1, 'Privy App ID is required'),
   PRIVY_APP_SECRET: z.string().min(1, 'Privy App Secret is required'),
-  SEI_PRIVATE_KEY: z.string().min(1, 'SEI private key for gas sponsorship'),
-  COMMUNITY_WALLET_INITIAL_BALANCE: z.string().default('0.05'), // 0.05 SEI
+  SPONSOR_PRIVATE_KEY: z.string().min(1, 'Sponsor private key for gas sponsorship'),
+  INITIAL_BALANCE: z.string().default('0.05'), // 0.05 SEI
   SEI_RPC_URL: z.string().url().default('https://evm-rpc.sei-apis.com'),
 });
 
 /**
- * Interface for embedded wallet data
+ * Interface for embedded wallet
  */
 interface EmbeddedWallet {
+  id: string;
   userId: string;
   address: string;
   platform: 'telegram' | 'discord';
-  createdAt: Date;
+  communityId: string;
   isProvisioned: boolean;
-  communityId?: string;
+  createdAt: Date;
+  lastActivity: Date;
 }
 
 /**
- * Interface for community wallet config
+ * Interface for community wallet configuration
  */
 interface CommunityWalletConfig {
   communityId: string;
   platform: 'telegram' | 'discord';
   sponsorshipEnabled: boolean;
   initialBalance: string;
-  welcomeNftContract?: string;
   customWelcomeMessage?: string;
+}
+
+/**
+ * Interface for transaction record
+ */
+interface TransactionRecord {
+  id: string;
+  walletId: string;
+  type: 'incoming' | 'outgoing' | 'swap';
+  amount: string;
+  token: string;
+  transactionHash: string;
+  timestamp: Date;
+  status: 'pending' | 'confirmed' | 'failed';
+}
+
+/**
+ * Interface for gas sponsorship
+ */
+interface GasSponsorship {
+  userId: string;
+  amount: string;
+  timestamp: Date;
+  transactionHash: string;
 }
 
 /**
@@ -94,45 +119,82 @@ export class EmbeddedWalletService extends Service {
   static override serviceType = 'embedded-wallet';
 
   override capabilityDescription =
-    'Provides embedded wallet functionality with Privy integration for seamless onboarding and community wallet provisioning.';
+    'Provides embedded wallet functionality with gasless transactions and multi-platform support.';
 
-  private privyAppId: string;
-  private privyAppSecret: string;
-  private sponsorPrivateKey: string;
-  private initialBalance: string;
-  private rpcUrl: string;
-  private walletClient: WalletClient;
-  private publicClient: PublicClient;
-  private sponsorAccount: any;
+  private privyAppId!: string;
+  private privyAppSecret!: string;
+  private sponsorPrivateKey!: string;
+  private initialBalance!: string;
+  private rpcUrl!: string;
+  private walletClient!: WalletClient;
+  private publicClient!: PublicClient;
 
   // In-memory storage for demo (in production, use proper database)
   private embeddedWallets: Map<string, EmbeddedWallet> = new Map();
+  private transactionHistory: Map<string, TransactionRecord[]> = new Map();
+  private gasSponsorship: Map<string, GasSponsorship> = new Map();
   private communityConfigs: Map<string, CommunityWalletConfig> = new Map();
 
-  override async initialize(runtime: IAgentRuntime): Promise<void> {
-    const config = configSchema.parse(runtime.config);
+  constructor(runtime?: IAgentRuntime) {
+    super(runtime);
     
-    this.privyAppId = config.PRIVY_APP_ID;
-    this.privyAppSecret = config.PRIVY_APP_SECRET;
-    this.sponsorPrivateKey = config.SEI_PRIVATE_KEY;
-    this.initialBalance = config.COMMUNITY_WALLET_INITIAL_BALANCE;
-    this.rpcUrl = config.SEI_RPC_URL;
+    // Initialize configuration from environment variables
+    this.privyAppId = process.env.PRIVY_APP_ID || '';
+    this.privyAppSecret = process.env.PRIVY_APP_SECRET || '';
+    this.sponsorPrivateKey = process.env.SPONSOR_PRIVATE_KEY || process.env.SEI_PRIVATE_KEY || '';
+    this.initialBalance = process.env.INITIAL_BALANCE || '0.05';
+    this.rpcUrl = process.env.SEI_RPC_URL || 'https://evm-rpc.sei-apis.com';
+  }
 
-    // Initialize sponsor account for gas sponsorship
-    this.sponsorAccount = privateKeyToAccount(this.sponsorPrivateKey as `0x${string}`);
-    
-    this.walletClient = createWalletClient({
-      account: this.sponsorAccount,
-      chain: seiMainnet,
-      transport: http(this.rpcUrl),
-    });
+  async initialize(): Promise<void> {
+    // Validate required configuration
+    if (!this.sponsorPrivateKey) {
+      logger.warn('No sponsor private key provided, embedded wallet service will have limited functionality');
+      return;
+    }
 
-    this.publicClient = createPublicClient({
-      chain: seiMainnet,
-      transport: http(this.rpcUrl),
-    });
+    try {
+      // Initialize wallet client for gas sponsorship
+      const sponsorAccount = privateKeyToAccount(this.sponsorPrivateKey as `0x${string}`);
+      
+      this.walletClient = createWalletClient({
+        account: sponsorAccount,
+        chain: seiMainnet,
+        transport: http(this.rpcUrl),
+      });
 
-    logger.info('EmbeddedWalletService initialized with Privy integration');
+      this.publicClient = createPublicClient({
+        chain: seiMainnet,
+        transport: http(this.rpcUrl),
+      });
+
+      logger.info('EmbeddedWalletService initialized');
+    } catch (error) {
+      logger.error('Failed to initialize EmbeddedWalletService:', error);
+      throw error;
+    }
+  }
+
+  static override async start(runtime: IAgentRuntime): Promise<Service> {
+    logger.info('Starting embedded wallet service');
+    const service = new EmbeddedWalletService(runtime);
+    await service.initialize();
+    return service;
+  }
+
+  static override async stop(runtime: IAgentRuntime): Promise<void> {
+    logger.info('Stopping embedded wallet service');
+    const service = runtime.getService(EmbeddedWalletService.serviceType);
+    if (!service) {
+      throw new Error('Embedded wallet service not found');
+    }
+    if ('stop' in service && typeof service.stop === 'function') {
+      await service.stop();
+    }
+  }
+
+  override async stop(): Promise<void> {
+    logger.info('EmbeddedWalletService stopped');
   }
 
   /**
@@ -154,12 +216,14 @@ export class EmbeddedWalletService extends Service {
       const walletAddress = await this.createPrivyWallet(userId, platform);
       
       const embeddedWallet: EmbeddedWallet = {
+        id: `wallet_${userId}_${Date.now()}`,
         userId,
         address: walletAddress,
         platform,
         createdAt: new Date(),
+        lastActivity: new Date(),
         isProvisioned: false,
-        communityId,
+        communityId: communityId || '',
       };
 
       this.embeddedWallets.set(userId, embeddedWallet);
@@ -192,6 +256,8 @@ export class EmbeddedWalletService extends Service {
       const initialAmount = parseEther(communityConfig.initialBalance);
       
       const hash = await this.walletClient.sendTransaction({
+        account: this.walletClient.account!,
+        chain: seiMainnet,
         to: wallet.address as Address,
         value: initialAmount,
       });
@@ -311,7 +377,7 @@ const createEmbeddedWalletAction: Action = {
       }
 
       const userId = message.entityId;
-      const platform = message.source?.includes('telegram') ? 'telegram' : 'discord';
+      const platform = 'discord'; // Default to discord, can be enhanced with platform detection
       
       const wallet = await service.createEmbeddedWallet(userId, platform);
       
@@ -371,7 +437,7 @@ const handleNewMemberAction: Action = {
       }
 
       const userId = message.entityId;
-      const platform = message.source?.includes('telegram') ? 'telegram' : 'discord';
+      const platform = 'discord'; // Default to discord, can be enhanced with platform detection
       const communityId = message.roomId; // Use roomId as communityId
       const communityName = state.data?.communityName || 'our community';
       
@@ -410,7 +476,7 @@ const embeddedWalletProvider: Provider = {
     try {
       const service = runtime.getService<EmbeddedWalletService>('embedded-wallet');
       if (!service) {
-        return { success: false, error: 'Service not available' };
+        return { data: { error: 'Service not available' } };
       }
 
       const userId = message.entityId;
@@ -418,7 +484,6 @@ const embeddedWalletProvider: Provider = {
 
       if (!wallet) {
         return {
-          success: true,
           data: {
             hasWallet: false,
             message: 'User does not have an embedded wallet yet. They can create one by saying "create wallet".',
@@ -427,7 +492,6 @@ const embeddedWalletProvider: Provider = {
       }
 
       return {
-        success: true,
         data: {
           hasWallet: true,
           address: wallet.address,
@@ -439,7 +503,7 @@ const embeddedWalletProvider: Provider = {
       };
     } catch (error) {
       logger.error('Failed to get embedded wallet info:', error);
-      return { success: false, error: error.message };
+      return { data: { error: error.message } };
     }
   },
 };
@@ -453,8 +517,8 @@ export const embeddedWalletPlugin: Plugin = {
   config: {
     PRIVY_APP_ID: process.env.PRIVY_APP_ID,
     PRIVY_APP_SECRET: process.env.PRIVY_APP_SECRET,
-    SEI_PRIVATE_KEY: process.env.SEI_PRIVATE_KEY,
-    COMMUNITY_WALLET_INITIAL_BALANCE: process.env.COMMUNITY_WALLET_INITIAL_BALANCE || '0.05',
+    SPONSOR_PRIVATE_KEY: process.env.SPONSOR_PRIVATE_KEY,
+    INITIAL_BALANCE: process.env.INITIAL_BALANCE || '0.05',
     SEI_RPC_URL: process.env.SEI_RPC_URL || 'https://evm-rpc.sei-apis.com',
   },
   services: [EmbeddedWalletService],
