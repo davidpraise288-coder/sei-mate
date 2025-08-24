@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![SEI Mate Banner]([https://i.ibb.co/rRHRLJFb/SEI-MATE.png])
+![SEI Mate Banner](https://i.ibb.co/rRHRLJFb/SEI-MATE.png)
 
 **🏆 AI Acceleration Hackathon 2025 - Consumer Agents Track**  
 *Powered by AIDN - Building AI Agents for Mainstream Consumer Platforms*
