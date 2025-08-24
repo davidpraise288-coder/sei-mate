@@ -163,6 +163,154 @@ User: "yes"
 SEI Mate: "📈 Order executed! Position opened: 10 SEI-PERP LONG at $0.45"
 ```
 
+## 🎯 Complete List of Available Prompts & Commands
+
+SEI Mate understands natural language and responds to a wide variety of prompts. Here's a comprehensive list of all available commands and their functionality:
+
+### 🔄 **Token Swapping Commands**
+**Plugin**: `plugin-sei-swap`
+
+| Command | Example | Functionality |
+|---------|---------|---------------|
+| **Swap Tokens** | `"swap 100 SEI to USDC"` | Swaps SEI tokens for USDC using Symphony protocol |
+| **Exchange Tokens** | `"exchange 50 SEI for USDT"` | Alternative syntax for token swapping |
+| **Trade Tokens** | `"trade 25 SEI to USDC"` | Another way to initiate token swaps |
+| **Convert Tokens** | `"convert 75 SEI to USDC"` | Token conversion functionality |
+
+**Supported Tokens**: SEI, USDC, USDT, and other SEI-based tokens
+**Protocol**: Symphony DEX
+**Features**: Automatic slippage protection, balance validation, transaction confirmation
+
+### 📈 **Perpetual Trading Commands**
+**Plugin**: `plugin-sei-perpetual-trading`
+
+| Command | Example | Functionality |
+|---------|---------|---------------|
+| **Buy Perpetual** | `"buy 10 ETH-PERP at market price"` | Opens long position in ETH perpetual |
+| **Sell Perpetual** | `"sell 5 BTC-PERP at $45,000"` | Opens short position in BTC perpetual |
+| **Long Position** | `"long 20 SEI-PERP at $0.45"` | Alternative syntax for buying perpetuals |
+| **Short Position** | `"short 15 ETH-PERP at $3,200"` | Alternative syntax for selling perpetuals |
+| **Check Positions** | `"show my positions"` | Displays all open perpetual positions with PnL |
+| **Position Status** | `"check my positions"` | Alternative way to view positions |
+| **Trading Balance** | `"show trading balance"` | Displays perpetual trading account balance |
+| **Margin Balance** | `"check margin balance"` | Shows available margin and used margin |
+| **Open Orders** | `"list open orders"` | Shows pending perpetual trading orders |
+| **Deposit to Trading** | `"deposit 1000 SEI to trading account"` | Funds perpetual trading account |
+
+**Supported Markets**: ETH-PERP, BTC-PERP, SEI-PERP, and other perpetual contracts
+**Protocol**: Citrex
+**Features**: Market/Limit orders, position management, margin trading, PnL tracking
+
+### 🏛️ **Governance Commands**
+**Plugin**: `plugin-sei-governance`
+
+| Command | Example | Functionality |
+|---------|---------|---------------|
+| **Vote on Proposal** | `"vote yes on proposal #42"` | Casts vote on governance proposal |
+| **Cast Vote** | `"vote no on proposal #15"` | Alternative voting syntax |
+| **Governance Vote** | `"vote abstain on proposal #30"` | Votes with abstain option |
+| **Proposal Vote** | `"vote veto on proposal #25"` | Votes with veto option |
+| **List Proposals** | `"show governance proposals"` | Lists all active governance proposals |
+| **Check Proposals** | `"list proposals"` | Alternative way to view proposals |
+| **Proposal Details** | `"show proposal #42 details"` | Displays detailed proposal information |
+| **List Validators** | `"show validators"` | Lists all SEI network validators |
+| **Check Validators** | `"list validators"` | Alternative way to view validators |
+| **Delegate Tokens** | `"delegate 1000 SEI to seivalidator123..."` | Delegates SEI to validator for staking |
+| **Stake Tokens** | `"stake 500 SEI to validator456..."` | Alternative delegation syntax |
+
+**Vote Options**: YES, NO, ABSTAIN, VETO
+**Features**: Real-time proposal tracking, validator information, delegation management
+
+### 🎨 **NFT Commands**
+**Plugin**: `plugin-sei-nft`
+
+| Command | Example | Functionality |
+|---------|---------|---------------|
+| **Mint NFT** | `"mint NFT name: My Artwork description: A beautiful digital piece"` | Creates and mints new NFT |
+| **Create NFT** | `"create NFT name: My Collection description: Unique digital art"` | Alternative minting syntax |
+| **New NFT** | `"new NFT name: My Masterpiece"` | Simplified NFT creation |
+| **Sell NFT** | `"sell NFT #123 for 100 SEI"` | Lists NFT for sale on marketplace |
+| **List NFT** | `"list NFT #456 for 50 SEI"` | Alternative selling syntax |
+| **Buy NFT** | `"buy NFT #789 for 75 SEI"` | Purchases NFT from marketplace |
+| **Purchase NFT** | `"purchase NFT #101 for 200 SEI"` | Alternative buying syntax |
+
+**Features**: Custom metadata, marketplace integration, secure transactions
+**Supported**: SEI NFT standard with marketplace functionality
+
+### 🔔 **Notification Commands**
+**Plugin**: `plugin-notification`
+
+| Command | Example | Functionality |
+|---------|---------|---------------|
+| **Price Alert** | `"alert me when SEI reaches $0.005"` | Sets price alert notification |
+| **Price Notification** | `"notify me when SEI goes above $0.006"` | Alternative alert syntax |
+| **SEI Price Alert** | `"alert me when SEI drops below $0.004"` | Sets lower price threshold |
+| **Governance Alert** | `"notify me of new governance proposals"` | Sets proposal notification |
+| **Proposal Alert** | `"alert me when proposals are submitted"` | Alternative proposal notification |
+
+**Features**: Multi-platform delivery (Telegram, Discord), customizable thresholds
+**Supported**: Price alerts, governance proposal notifications
+
+### 🤖 **AI-Powered Commands**
+**Plugin**: `plugin-proposal-summary`
+
+| Command | Example | Functionality |
+|---------|---------|---------------|
+| **Summarize Proposal** | `"summarize proposal #42"` | AI-generated proposal summary |
+| **Proposal Summary** | `"summary of proposal #15"` | Alternative summary syntax |
+| **AI Summary** | `"AI summary for proposal #30"` | AI-powered proposal analysis |
+
+**AI Providers**: OpenAI GPT-4, OpenRouter Claude
+**Features**: Intelligent analysis, key points extraction, risk assessment
+
+### 💬 **General Conversation Commands**
+
+| Command | Example | Functionality |
+|---------|---------|---------------|
+| **Help** | `"help"` or `"what can you do?"` | Shows available commands and features |
+| **Status** | `"status"` or `"how are you?"` | Checks agent status and connectivity |
+| **Balance Check** | `"check my SEI balance"` | Shows wallet balance (if configured) |
+| **Network Info** | `"SEI network status"` | Displays network information |
+| **Price Check** | `"what's the price of SEI?"` | Shows current SEI price |
+
+### 🔒 **Security Features**
+
+**Confirmation Required for All Major Actions:**
+- **Token Swaps**: Requires explicit "yes" confirmation
+- **Trading Orders**: Must confirm order details before execution
+- **NFT Operations**: Confirmation needed for minting, buying, selling
+- **Governance Actions**: Vote confirmation required
+- **Delegation**: Staking confirmation mandatory
+- **Deposits**: Trading account funding confirmation
+
+**Example Confirmation Flow:**
+```
+User: "swap 100 SEI to USDC"
+SEI Mate: "Are you sure you want to swap 100 SEI to USDC? Please confirm with 'yes' to proceed."
+User: "yes"
+SEI Mate: [Executes the swap]
+```
+
+### 📱 **Platform Support**
+
+**Telegram**: Full-featured bot with inline keyboards and rich formatting
+**Discord**: Rich embeds, slash commands, and webhook integration
+**Future**: Twitter/X integration planned
+
+### 🎯 **Command Patterns**
+
+**General Format**: `[Action] [Amount/Details] [Asset/Parameter] [Additional Options]`
+
+**Examples:**
+- `swap 100 SEI to USDC`
+- `buy 10 ETH-PERP at market price`
+- `vote yes on proposal #42`
+- `delegate 1000 SEI to validator123...`
+- `mint NFT name: My Artwork description: Beautiful piece`
+- `alert me when SEI reaches $0.005`
+
+**Natural Language Support**: SEI Mate understands various phrasings and synonyms for the same commands, making interaction intuitive and user-friendly.
+
 ## 🏆 Hackathon Advantages
 
 ### 🎯 **Perfect Fit for Consumer Agents Track**
