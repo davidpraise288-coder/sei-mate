@@ -48,7 +48,7 @@ const configSchema = z.object({
     .transform((val) => val.trim()),
   SEI_MNEMONIC: z.string().optional(),
   SEI_PRIVATE_KEY: z.string().optional(),
-  SEI_CHAIN_ID: z.string().default('pacific-1'),  // Correct for Cosmos SDK operations
+  GOV_CHAIN_ID: z.string().default('pacific-1'),  // Correct for Cosmos SDK operations
   SEI_ADDRESS_PREFIX: z.string().default('sei'),
 });
 
