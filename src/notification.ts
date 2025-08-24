@@ -25,10 +25,10 @@ import axios from 'axios';
  */
 const configSchema = z.object({
   COINMARKETCAP_API_KEY: z.string().min(1, 'CoinMarketCap API key is required'),
-  SEI_REST_URL: z
+  RPC_REST_URL: z
     .string()
     .url()
-    .default('https://rest.sei-apis.com')
+    .default('https://evm-rpc.sei-apis.com')
     .transform((val) => val.trim()),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_CHAT_ID: z.string().optional(),
@@ -102,7 +102,7 @@ export class NotificationService extends Service {
   constructor(runtime?: IAgentRuntime) {
     super(runtime);
     this.coinMarketCapApiKey = process.env.COINMARKETCAP_API_KEY || '';
-    this.seiRestUrl = process.env.SEI_REST_URL || 'https://rest.sei-apis.com';
+    this.seiRestUrl = process.env.SEI_REST_URL || 'https://sei-api.polkachu.com';
     this.telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || '';
     this.telegramChatId = process.env.TELEGRAM_CHAT_ID || '';
     this.discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL || '';
