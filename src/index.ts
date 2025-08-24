@@ -4,6 +4,7 @@ import { seiGovernancePlugin } from './gov.ts';
 import { notificationPlugin } from './notification.ts';
 import { seiPerpetualTradingPlugin } from './trade.ts';
 import { proposalSummaryPlugin } from './proposal-summary.ts';
+import { autonomousPlugin } from './autonomous.ts';
 import { character } from './character.ts';
 import { ProjectStarterTestSuite } from './__tests__/e2e/project-starter.e2e.ts';
 
@@ -20,7 +21,8 @@ export const projectAgent: ProjectAgent = {
     seiGovernancePlugin, 
     notificationPlugin, 
     seiPerpetualTradingPlugin,
-    proposalSummaryPlugin
+    proposalSummaryPlugin,
+    autonomousPlugin
   ], 
   tests: [ProjectStarterTestSuite], // Export tests from ProjectAgent
 };
