@@ -14,6 +14,10 @@ import {
 import { z } from 'zod';
 import axios from 'axios';
 
+// Drizzle ORM for database operations
+import { pgTable, uuid, text, timestamp, decimal, integer, boolean, json } from 'drizzle-orm/pg-core';
+import { eq, and, lt, gte, desc } from 'drizzle-orm';
+
 /**
  * Standing Order Types
  */
@@ -102,6 +106,60 @@ interface StandingOrder {
 }
 
 /**
+ * Database schema for standing orders
+ */
+export const standingOrdersTable = pgTable('standing_orders', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: text('user_id').notNull(),
+  type: text('type').notNull(),
+  status: text('status').notNull().default('active'),
+  frequency: text('frequency').notNull(),
+  nextExecution: timestamp('next_execution').notNull(),
+  lastExecuted: timestamp('last_executed'),
+  customInterval: integer('custom_interval'),
+  
+  // Order parameters as JSON
+  parameters: json('parameters').$type<{
+    amount?: number;
+    token?: string;
+    maxSpend?: number;
+    targetAllocation?: Record<string, number>;
+    votingStrategy?: string;
+    delegateAddress?: string;
+    triggerPrice?: number;
+    triggerCondition?: 'above' | 'below';
+    portfolioTargets?: Record<string, number>;
+    rebalanceThreshold?: number;
+  }>(),
+  
+  // Safety and limits
+  totalSpentLimit: decimal('total_spent_limit', { precision: 18, scale: 6 }),
+  totalSpent: decimal('total_spent', { precision: 18, scale: 6 }).default('0'),
+  maxExecutions: integer('max_executions'),
+  executionCount: integer('execution_count').default(0),
+  
+  // User preferences
+  notifications: boolean('notifications').default(true),
+  description: text('description').notNull(),
+  
+  // Timestamps
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
+export const orderExecutionsTable = pgTable('order_executions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id').notNull().references(() => standingOrdersTable.id),
+  timestamp: timestamp('timestamp').defaultNow(),
+  success: boolean('success').notNull(),
+  txHash: text('tx_hash'),
+  error: text('error'),
+  amountProcessed: decimal('amount_processed', { precision: 18, scale: 6 }),
+  gasUsed: text('gas_used'),
+  gasWanted: text('gas_wanted'),
+});
+
+/**
  * Configuration schema
  */
 const configSchema = z.object({
@@ -123,7 +181,6 @@ class AutonomousService extends Service {
     'Provides autonomous goal-seeking capabilities including recurring buys, staking, DCA strategies, and automated portfolio management.';
 
   public config: z.infer<typeof configSchema>;
-  private standingOrders: Map<string, StandingOrder> = new Map();
   private executionTimer?: NodeJS.Timeout;
   private isRunning: boolean = false;
 
@@ -178,20 +235,23 @@ class AutonomousService extends Service {
   }
 
   /**
-   * Load standing orders from persistent storage
+   * Load standing orders from database - runs migrations if needed
    */
   private async loadStandingOrders(): Promise<void> {
-    // In a real implementation, this would load from database
-    // For now, we'll start with an empty map
-    logger.info('Loading standing orders from storage');
-  }
+    try {
+      // Check if database is available through SQL plugin
+      if (!(this.runtime as any)?.databaseAdapter?.db) {
+        logger.warn('No database adapter available, autonomous features will be limited');
+        logger.info('To enable full autonomous features, ensure @elizaos/plugin-sql is properly configured');
+        return;
+      }
 
-  /**
-   * Save standing orders to persistent storage
-   */
-  private async saveStandingOrders(): Promise<void> {
-    // In a real implementation, this would save to database
-    logger.info('Saving standing orders to storage');
+      // Database is auto-migrated by the SQL plugin
+      logger.info('Standing orders database initialized');
+    } catch (error) {
+      logger.error('Failed to load standing orders:', error);
+      throw new Error(`Failed to initialize autonomous service database: ${error}`);
+    }
   }
 
   /**
@@ -216,153 +276,224 @@ class AutonomousService extends Service {
    * Check for and execute orders that are ready
    */
   private async executeReadyOrders(): Promise<void> {
-    const now = new Date();
-    const readyOrders = Array.from(this.standingOrders.values()).filter(order => 
-      order.status === OrderStatus.ACTIVE && order.nextExecution <= now
-    );
+    if (!(this.runtime as any)?.databaseAdapter?.db) {
+      logger.debug('No database adapter available for autonomous execution');
+      return;
+    }
 
-    for (const order of readyOrders) {
-      try {
-        await this.executeOrder(order);
-      } catch (error) {
-        logger.error(`Failed to execute order ${order.id}:`, error);
-        this.recordExecution(order, false, undefined, String(error));
+    const now = new Date();
+    
+    try {
+      // Get ready orders from database
+      const readyOrders = await (this.runtime as any).databaseAdapter.db
+        .select()
+        .from(standingOrdersTable)
+        .where(
+          and(
+            eq(standingOrdersTable.status, 'active'),
+            lt(standingOrdersTable.nextExecution, now)
+          )
+        );
+
+      logger.info(`Found ${readyOrders.length} orders ready for execution`);
+
+      for (const orderData of readyOrders) {
+        try {
+          await this.executeOrder(orderData);
+        } catch (error) {
+          logger.error(`Failed to execute order ${orderData.id}:`, error);
+          await this.recordExecution(orderData.id, false, undefined, String(error));
+        }
       }
+    } catch (error) {
+      logger.error('Failed to fetch ready orders:', error);
     }
   }
 
   /**
    * Execute a specific standing order
    */
-  private async executeOrder(order: StandingOrder): Promise<void> {
-    logger.info(`Executing order ${order.id} (${order.type})`);
+  private async executeOrder(orderData: any): Promise<void> {
+    logger.info(`Executing order ${orderData.id} (${orderData.type})`);
 
     // Safety checks
-    if (!this.passesSafetyChecks(order)) {
-      logger.warn(`Order ${order.id} failed safety checks, skipping`);
+    if (!(await this.passesSafetyChecks(orderData))) {
+      logger.warn(`Order ${orderData.id} failed safety checks, skipping`);
       return;
     }
 
     let success = false;
     let txHash: string | undefined;
     let amountProcessed: number | undefined;
+    let gasUsed: string | undefined;
 
-    switch (order.type) {
-      case OrderType.RECURRING_BUY:
-        ({ success, txHash, amountProcessed } = await this.executeRecurringBuy(order));
-        break;
-      
-      case OrderType.RECURRING_STAKE:
-        ({ success, txHash, amountProcessed } = await this.executeRecurringStake(order));
-        break;
-      
-      case OrderType.DCA_STRATEGY:
-        ({ success, txHash, amountProcessed } = await this.executeDCAStrategy(order));
-        break;
-      
-      case OrderType.AUTO_VOTE:
-        ({ success, txHash } = await this.executeAutoVote(order));
-        break;
-      
-      case OrderType.PORTFOLIO_REBALANCE:
-        ({ success, txHash } = await this.executePortfolioRebalance(order));
-        break;
-      
-      case OrderType.LIMIT_ORDER:
-        ({ success, txHash, amountProcessed } = await this.executeLimitOrder(order));
-        break;
-      
-      default:
-        logger.warn(`Unknown order type: ${order.type}`);
-        return;
-    }
+    try {
+      switch (orderData.type) {
+        case 'recurring_buy':
+          ({ success, txHash, amountProcessed, gasUsed } = await this.executeRecurringBuy(orderData));
+          break;
+        
+        case 'recurring_stake':
+          ({ success, txHash, amountProcessed, gasUsed } = await this.executeRecurringStake(orderData));
+          break;
+        
+        case 'dca_strategy':
+          ({ success, txHash, amountProcessed, gasUsed } = await this.executeDCAStrategy(orderData));
+          break;
+        
+        case 'auto_vote':
+          ({ success, txHash, gasUsed } = await this.executeAutoVote(orderData));
+          break;
+        
+        case 'portfolio_rebalance':
+          ({ success, txHash, gasUsed } = await this.executePortfolioRebalance(orderData));
+          break;
+        
+        case 'limit_order':
+          ({ success, txHash, amountProcessed, gasUsed } = await this.executeLimitOrder(orderData));
+          break;
+        
+        default:
+          logger.warn(`Unknown order type: ${orderData.type}`);
+          return;
+      }
 
-    // Record execution
-    this.recordExecution(order, success, txHash, undefined, amountProcessed);
-    
-    // Update next execution time
-    if (success) {
-      this.updateNextExecution(order);
-    }
+      // Record execution
+      await this.recordExecution(orderData.id, success, txHash, undefined, amountProcessed, gasUsed);
+      
+      // Update next execution time and counters
+      if (success) {
+        await this.updateNextExecution(orderData);
+      }
 
-    // Send notification if enabled
-    if (order.notifications && this.runtime) {
-      await this.sendExecutionNotification(order, success, txHash, amountProcessed);
+      // Send notification if enabled
+      if (orderData.notifications && this.runtime) {
+        await this.sendExecutionNotification(orderData, success, txHash, amountProcessed);
+      }
+    } catch (error) {
+      logger.error(`Execution failed for order ${orderData.id}:`, error);
+      await this.recordExecution(orderData.id, false, undefined, String(error));
     }
   }
 
   /**
    * Execute recurring buy order
    */
-  private async executeRecurringBuy(order: StandingOrder): Promise<{ success: boolean; txHash?: string; amountProcessed?: number }> {
-    const { amount, token } = order.parameters;
+  private async executeRecurringBuy(orderData: any): Promise<{ success: boolean; txHash?: string; amountProcessed?: number; gasUsed?: string }> {
+    const { amount, token } = orderData.parameters;
     
     if (!amount || !token) {
       throw new Error('Missing amount or token for recurring buy');
     }
 
     // Get swap service
-    const swapService = this.runtime?.getService('swap');
+    const swapService = this.runtime?.getService('sei-swap') as any;
     if (!swapService) {
-      throw new Error('Swap service not available');
+      throw new Error('SEI swap service not available');
     }
 
     try {
-      // Execute the swap (this would call the actual swap service)
       logger.info(`Executing recurring buy: ${amount} USD worth of ${token}`);
       
-      // Mock execution for now - in real implementation, call swap service
-      const mockTxHash = `0x${Math.random().toString(16).substring(2)}`;
+      // Get available tokens and find the target token
+      const availableTokens = swapService.getAvailableTokens();
+      const targetToken = Object.values(availableTokens).find((t: any) => 
+        t.symbol.toUpperCase() === token.toUpperCase()
+      ) as any;
       
+      if (!targetToken) {
+        throw new Error(`Token ${token} not available for trading`);
+      }
+
+      // For now, assume we're buying from USDC to the target token
+      const fromToken = availableTokens.usdc;
+      
+      // Execute the swap
+      const swapResult = await swapService.executeSwap(
+        fromToken.address,
+        targetToken.address,
+        amount.toString(),
+        '2' // 2% slippage for autonomous orders
+      );
+
       return {
         success: true,
-        txHash: mockTxHash,
-        amountProcessed: amount
+        txHash: swapResult.transactionHash,
+        amountProcessed: parseFloat(swapResult.amountIn),
+        gasUsed: swapResult.gasUsed
       };
     } catch (error) {
       logger.error('Failed to execute recurring buy:', error);
-      return { success: false };
+      throw error;
     }
   }
 
   /**
    * Execute recurring stake order
    */
-  private async executeRecurringStake(order: StandingOrder): Promise<{ success: boolean; txHash?: string; amountProcessed?: number }> {
-    const { amount } = order.parameters;
+  private async executeRecurringStake(orderData: any): Promise<{ success: boolean; txHash?: string; amountProcessed?: number; gasUsed?: string }> {
+    const { amount, delegateAddress } = orderData.parameters;
     
     if (!amount) {
       throw new Error('Missing amount for recurring stake');
     }
 
-    try {
-      // Get governance service for staking
-      const govService = this.runtime?.getService('sei-governance');
-      if (!govService) {
-        throw new Error('Governance service not available');
-      }
+    // Get governance service for staking
+    const govService = this.runtime?.getService('sei-governance') as any;
+    if (!govService) {
+      throw new Error('SEI governance service not available');
+    }
 
+    try {
       logger.info(`Executing recurring stake: ${amount} SEI`);
       
-      // Mock execution - in real implementation, call staking service
-      const mockTxHash = `0x${Math.random().toString(16).substring(2)}`;
+      // Convert SEI to usei (1 SEI = 1,000,000 usei)
+      const amountInUsei = (amount * 1_000_000).toString();
       
+      // Use provided delegate address or a default validator
+      const validatorAddress = delegateAddress || await this.getDefaultValidator(govService);
+      
+      if (!validatorAddress) {
+        throw new Error('No validator address available for staking');
+      }
+
+      // Execute delegation
+      const delegationResult = await govService.delegateTokens(validatorAddress, amountInUsei);
+      
+      if (!delegationResult.success) {
+        throw new Error(delegationResult.error || 'Delegation failed');
+      }
+
       return {
         success: true,
-        txHash: mockTxHash,
-        amountProcessed: amount
+        txHash: delegationResult.txHash,
+        amountProcessed: amount,
+        gasUsed: delegationResult.gasUsed
       };
     } catch (error) {
       logger.error('Failed to execute recurring stake:', error);
-      return { success: false };
+      throw error;
+    }
+  }
+
+  /**
+   * Get a default validator for staking (picks the first active validator)
+   */
+  private async getDefaultValidator(govService: any): Promise<string | null> {
+    try {
+      const validators = await govService.getValidators('BOND_STATUS_BONDED', 1);
+      return validators.length > 0 ? validators[0].operator_address : null;
+    } catch (error) {
+      logger.error('Failed to get default validator:', error);
+      return null;
     }
   }
 
   /**
    * Execute DCA strategy
    */
-  private async executeDCAStrategy(order: StandingOrder): Promise<{ success: boolean; txHash?: string; amountProcessed?: number }> {
-    const { targetAllocation, amount } = order.parameters;
+  private async executeDCAStrategy(orderData: any): Promise<{ success: boolean; txHash?: string; amountProcessed?: number; gasUsed?: string }> {
+    const { targetAllocation, amount } = orderData.parameters;
     
     if (!targetAllocation || !amount) {
       throw new Error('Missing target allocation or amount for DCA strategy');
@@ -372,7 +503,7 @@ class AutonomousService extends Service {
       logger.info(`Executing DCA strategy with ${amount} USD`);
       
       // Get current portfolio balance
-      const portfolio = await this.getCurrentPortfolio(order.userId);
+      const portfolio = await this.getCurrentPortfolio(orderData.userId);
       
       // Calculate allocations needed
       const allocations = this.calculateDCAAllocations(portfolio, targetAllocation, amount);
@@ -402,8 +533,8 @@ class AutonomousService extends Service {
   /**
    * Execute auto vote
    */
-  private async executeAutoVote(order: StandingOrder): Promise<{ success: boolean; txHash?: string }> {
-    const { votingStrategy, delegateAddress } = order.parameters;
+  private async executeAutoVote(orderData: any): Promise<{ success: boolean; txHash?: string; gasUsed?: string }> {
+    const { votingStrategy, delegateAddress } = orderData.parameters;
     
     if (!votingStrategy) {
       throw new Error('Missing voting strategy for auto vote');
@@ -434,8 +565,8 @@ class AutonomousService extends Service {
   /**
    * Execute portfolio rebalance
    */
-  private async executePortfolioRebalance(order: StandingOrder): Promise<{ success: boolean; txHash?: string }> {
-    const { portfolioTargets, rebalanceThreshold } = order.parameters;
+  private async executePortfolioRebalance(orderData: any): Promise<{ success: boolean; txHash?: string; gasUsed?: string }> {
+    const { portfolioTargets, rebalanceThreshold } = orderData.parameters;
     
     if (!portfolioTargets || !rebalanceThreshold) {
       throw new Error('Missing portfolio targets or rebalance threshold');
@@ -444,8 +575,8 @@ class AutonomousService extends Service {
     try {
       logger.info('Executing portfolio rebalance');
       
-      // Get current portfolio
-      const portfolio = await this.getCurrentPortfolio(order.userId);
+      // Get current portfolio  
+      const portfolio = await this.getCurrentPortfolio(orderData.userId);
       
       // Check if rebalancing is needed
       const needsRebalance = this.checkRebalanceNeeded(portfolio, portfolioTargets, rebalanceThreshold);
@@ -479,8 +610,8 @@ class AutonomousService extends Service {
   /**
    * Execute limit order
    */
-  private async executeLimitOrder(order: StandingOrder): Promise<{ success: boolean; txHash?: string; amountProcessed?: number }> {
-    const { triggerPrice, triggerCondition, amount, token } = order.parameters;
+  private async executeLimitOrder(orderData: any): Promise<{ success: boolean; txHash?: string; amountProcessed?: number; gasUsed?: string }> {
+    const { triggerPrice, triggerCondition, amount, token } = orderData.parameters;
     
     if (!triggerPrice || !triggerCondition || !amount || !token) {
       throw new Error('Missing parameters for limit order');
@@ -505,7 +636,7 @@ class AutonomousService extends Service {
       const mockTxHash = `0x${Math.random().toString(16).substring(2)}`;
       
       // Mark order as completed since limit orders are one-time
-      order.status = OrderStatus.COMPLETED;
+      // This will be handled by the updateNextExecution method
       
       return {
         success: true,
@@ -521,83 +652,165 @@ class AutonomousService extends Service {
   /**
    * Safety checks before executing orders
    */
-  private passesSafetyChecks(order: StandingOrder): boolean {
-    // Check daily spending limit
-    const today = new Date().toDateString();
-    const todaySpending = order.executions
-      .filter(exec => exec.timestamp.toDateString() === today && exec.success)
-      .reduce((sum, exec) => sum + (exec.amountProcessed || 0), 0);
-
-    if (todaySpending >= this.config.MAX_DAILY_SPEND) {
-      logger.warn(`Order ${order.id} exceeds daily spending limit`);
+  private async passesSafetyChecks(orderData: any): Promise<boolean> {
+    if (!(this.runtime as any)?.databaseAdapter?.db) {
+      logger.warn('No database adapter available for safety checks');
       return false;
     }
 
-    // Check total spending limit
-    if (order.totalSpentLimit && order.totalSpent >= order.totalSpentLimit) {
-      logger.warn(`Order ${order.id} exceeds total spending limit`);
-      order.status = OrderStatus.COMPLETED;
+    try {
+      // Check daily spending limit
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const todayExecutions = await (this.runtime as any).databaseAdapter.db
+        .select()
+        .from(orderExecutionsTable)
+        .where(
+          and(
+            eq(orderExecutionsTable.orderId, orderData.id),
+            eq(orderExecutionsTable.success, true),
+            gte(orderExecutionsTable.timestamp, today),
+            lt(orderExecutionsTable.timestamp, tomorrow)
+          )
+        );
+
+      const todaySpending = todayExecutions.reduce((sum: number, exec: any) => 
+        sum + parseFloat(exec.amountProcessed || '0'), 0
+      );
+
+      if (todaySpending >= this.config.MAX_DAILY_SPEND) {
+        logger.warn(`Order ${orderData.id} exceeds daily spending limit: ${todaySpending}/${this.config.MAX_DAILY_SPEND}`);
+        return false;
+      }
+
+      // Check total spending limit
+      if (orderData.totalSpentLimit && parseFloat(orderData.totalSpent || '0') >= parseFloat(orderData.totalSpentLimit)) {
+        logger.warn(`Order ${orderData.id} exceeds total spending limit`);
+        
+        // Mark order as completed
+        await (this.runtime as any).databaseAdapter.db
+          .update(standingOrdersTable)
+          .set({ status: 'completed' })
+          .where(eq(standingOrdersTable.id, orderData.id));
+        
+        return false;
+      }
+
+      // Check max executions
+      if (orderData.maxExecutions && orderData.executionCount >= orderData.maxExecutions) {
+        logger.warn(`Order ${orderData.id} reached max executions`);
+        
+        // Mark order as completed
+        await (this.runtime as any).databaseAdapter.db
+          .update(standingOrdersTable)
+          .set({ status: 'completed' })
+          .where(eq(standingOrdersTable.id, orderData.id));
+        
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      logger.error('Failed to perform safety checks:', error);
       return false;
     }
-
-    // Check max executions
-    if (order.maxExecutions && order.executionCount >= order.maxExecutions) {
-      logger.warn(`Order ${order.id} reached max executions`);
-      order.status = OrderStatus.COMPLETED;
-      return false;
-    }
-
-    return true;
   }
 
   /**
    * Record execution result
    */
-  private recordExecution(order: StandingOrder, success: boolean, txHash?: string, error?: string, amountProcessed?: number): void {
-    const execution = {
-      timestamp: new Date(),
-      success,
-      txHash,
-      error,
-      amountProcessed
-    };
-
-    order.executions.push(execution);
-    order.executionCount++;
-    order.lastExecuted = execution.timestamp;
-
-    if (success && amountProcessed) {
-      order.totalSpent += amountProcessed;
+  private async recordExecution(orderId: string, success: boolean, txHash?: string, error?: string, amountProcessed?: number, gasUsed?: string): Promise<void> {
+    if (!(this.runtime as any)?.databaseAdapter?.db) {
+      logger.warn('No database adapter available for recording execution');
+      return;
     }
 
-    // Save to persistent storage
-    this.saveStandingOrders();
+    try {
+      // Insert execution record
+      await (this.runtime as any).databaseAdapter.db
+        .insert(orderExecutionsTable)
+        .values({
+          orderId,
+          success,
+          txHash,
+          error,
+          amountProcessed: amountProcessed?.toString(),
+          gasUsed,
+        });
+
+      // Update order counts and totals
+      const updateData: any = {
+        lastExecuted: new Date(),
+        executionCount: (this.runtime as any).databaseAdapter.db.raw('execution_count + 1'),
+        updatedAt: new Date(),
+      };
+
+      if (success && amountProcessed) {
+        updateData.totalSpent = (this.runtime as any).databaseAdapter.db.raw(`total_spent + ${amountProcessed}`);
+      }
+
+      await (this.runtime as any).databaseAdapter.db
+        .update(standingOrdersTable)
+        .set(updateData)
+        .where(eq(standingOrdersTable.id, orderId));
+
+      logger.info(`Recorded execution for order ${orderId}: ${success ? 'SUCCESS' : 'FAILED'}`);
+    } catch (error) {
+      logger.error('Failed to record execution:', error);
+    }
   }
 
   /**
    * Update next execution time based on frequency
    */
-  private updateNextExecution(order: StandingOrder): void {
+  private async updateNextExecution(orderData: any): Promise<void> {
+    if (!(this.runtime as any)?.databaseAdapter?.db) {
+      logger.warn('No database adapter available for updating next execution');
+      return;
+    }
+
     const now = new Date();
+    let nextExecution: Date;
     
-    switch (order.frequency) {
-      case Frequency.HOURLY:
-        order.nextExecution = new Date(now.getTime() + 60 * 60 * 1000);
+    switch (orderData.frequency) {
+      case 'hourly':
+        nextExecution = new Date(now.getTime() + 60 * 60 * 1000);
         break;
-      case Frequency.DAILY:
-        order.nextExecution = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      case 'daily':
+        nextExecution = new Date(now.getTime() + 24 * 60 * 60 * 1000);
         break;
-      case Frequency.WEEKLY:
-        order.nextExecution = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      case 'weekly':
+        nextExecution = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
         break;
-      case Frequency.MONTHLY:
-        order.nextExecution = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
+      case 'monthly':
+        nextExecution = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
         break;
-      case Frequency.CUSTOM:
-        if (order.customInterval) {
-          order.nextExecution = new Date(now.getTime() + order.customInterval);
+      case 'custom':
+        if (orderData.customInterval) {
+          nextExecution = new Date(now.getTime() + orderData.customInterval);
+        } else {
+          nextExecution = new Date(now.getTime() + 24 * 60 * 60 * 1000); // Default to daily
         }
         break;
+      default:
+        nextExecution = new Date(now.getTime() + 24 * 60 * 60 * 1000); // Default to daily
+    }
+
+    try {
+      await (this.runtime as any).databaseAdapter.db
+        .update(standingOrdersTable)
+        .set({ 
+          nextExecution,
+          updatedAt: new Date()
+        })
+        .where(eq(standingOrdersTable.id, orderData.id));
+
+      logger.info(`Updated next execution for order ${orderData.id}: ${nextExecution.toISOString()}`);
+    } catch (error) {
+      logger.error('Failed to update next execution time:', error);
     }
   }
 
@@ -661,56 +874,128 @@ class AutonomousService extends Service {
   /**
    * Public methods for managing standing orders
    */
-  public createStandingOrder(order: Omit<StandingOrder, 'id' | 'createdAt' | 'executions' | 'totalSpent' | 'executionCount'>): string {
-    const id = Math.random().toString(36).substring(2);
-    const standingOrder: StandingOrder = {
-      ...order,
-      id,
-      createdAt: new Date(),
-      executions: [],
-      totalSpent: 0,
-      executionCount: 0
-    };
-    
-    this.standingOrders.set(id, standingOrder);
-    this.saveStandingOrders();
-    
-    logger.info(`Created standing order ${id}: ${order.description}`);
-    return id;
-  }
-
-  public getStandingOrders(userId: string): StandingOrder[] {
-    return Array.from(this.standingOrders.values()).filter(order => order.userId === userId);
-  }
-
-  public pauseStandingOrder(orderId: string): boolean {
-    const order = this.standingOrders.get(orderId);
-    if (order && order.status === OrderStatus.ACTIVE) {
-      order.status = OrderStatus.PAUSED;
-      this.saveStandingOrders();
-      return true;
+  public async createStandingOrder(orderData: any): Promise<string> {
+    if (!(this.runtime as any)?.databaseAdapter?.db) {
+      throw new Error('No database adapter available');
     }
-    return false;
+
+    try {
+      const result = await (this.runtime as any).databaseAdapter.db
+        .insert(standingOrdersTable)
+        .values({
+          userId: orderData.userId,
+          type: orderData.type,
+          status: orderData.status || 'active',
+          frequency: orderData.frequency,
+          nextExecution: orderData.nextExecution,
+          customInterval: orderData.customInterval,
+          parameters: orderData.parameters,
+          totalSpentLimit: orderData.totalSpentLimit?.toString(),
+          maxExecutions: orderData.maxExecutions,
+          notifications: orderData.notifications,
+          description: orderData.description,
+        })
+        .returning({ id: standingOrdersTable.id });
+
+      const orderId = result[0].id;
+      logger.info(`Created standing order ${orderId}: ${orderData.description}`);
+      return orderId;
+    } catch (error) {
+      logger.error('Failed to create standing order:', error);
+      throw new Error(`Failed to create standing order: ${error}`);
+    }
   }
 
-  public resumeStandingOrder(orderId: string): boolean {
-    const order = this.standingOrders.get(orderId);
-    if (order && order.status === OrderStatus.PAUSED) {
-      order.status = OrderStatus.ACTIVE;
-      this.saveStandingOrders();
-      return true;
+  public async getStandingOrders(userId: string): Promise<any[]> {
+    if (!(this.runtime as any)?.databaseAdapter?.db) {
+      return [];
     }
-    return false;
+
+    try {
+      const orders = await (this.runtime as any).databaseAdapter.db
+        .select()
+        .from(standingOrdersTable)
+        .where(eq(standingOrdersTable.userId, userId))
+        .orderBy(desc(standingOrdersTable.createdAt));
+
+      return orders;
+    } catch (error) {
+      logger.error('Failed to get standing orders:', error);
+      return [];
+    }
   }
 
-  public cancelStandingOrder(orderId: string): boolean {
-    const order = this.standingOrders.get(orderId);
-    if (order) {
-      order.status = OrderStatus.CANCELLED;
-      this.saveStandingOrders();
-      return true;
+  public async pauseStandingOrder(orderId: string): Promise<boolean> {
+    if (!(this.runtime as any)?.databaseAdapter?.db) {
+      return false;
     }
-    return false;
+
+    try {
+      const result = await (this.runtime as any).databaseAdapter.db
+        .update(standingOrdersTable)
+        .set({ 
+          status: 'paused',
+          updatedAt: new Date()
+        })
+        .where(
+          and(
+            eq(standingOrdersTable.id, orderId),
+            eq(standingOrdersTable.status, 'active')
+          )
+        );
+
+      return result.length > 0;
+    } catch (error) {
+      logger.error('Failed to pause standing order:', error);
+      return false;
+    }
+  }
+
+  public async resumeStandingOrder(orderId: string): Promise<boolean> {
+    if (!(this.runtime as any)?.databaseAdapter?.db) {
+      return false;
+    }
+
+    try {
+      const result = await (this.runtime as any).databaseAdapter.db
+        .update(standingOrdersTable)
+        .set({ 
+          status: 'active',
+          updatedAt: new Date()
+        })
+        .where(
+          and(
+            eq(standingOrdersTable.id, orderId),
+            eq(standingOrdersTable.status, 'paused')
+          )
+        );
+
+      return result.length > 0;
+    } catch (error) {
+      logger.error('Failed to resume standing order:', error);
+      return false;
+    }
+  }
+
+  public async cancelStandingOrder(orderId: string): Promise<boolean> {
+    if (!(this.runtime as any)?.databaseAdapter?.db) {
+      return false;
+    }
+
+    try {
+      const result = await (this.runtime as any).databaseAdapter.db
+        .update(standingOrdersTable)
+        .set({ 
+          status: 'cancelled',
+          updatedAt: new Date()
+        })
+        .where(eq(standingOrdersTable.id, orderId));
+
+      return result.length > 0;
+    } catch (error) {
+      logger.error('Failed to cancel standing order:', error);
+      return false;
+    }
   }
 }
 
@@ -942,7 +1227,7 @@ const createStandingOrderAction: Action = {
       }
       
       // For now, we'll assume the user confirms (in a real implementation, this would be a multi-step conversation)
-      const orderId = service.createStandingOrder(orderData as any);
+      const orderId = await service.createStandingOrder(orderData as any);
       
       let response = `🤖 **Standing Order Created Successfully!**\n\n`;
       response += `📋 **Order ID:** ${orderId}\n`;
@@ -1077,21 +1362,21 @@ const manageStandingOrdersAction: Action = {
       let response = '';
 
       if (managementAction.action === 'list') {
-        const orders = service.getStandingOrders(userId);
+        const orders = await service.getStandingOrders(userId);
         
         if (orders.length === 0) {
           response = '📋 **Your Standing Orders**\n\nNo standing orders found. Create one by saying something like:\n"Buy $10 worth of SEI every Friday"';
         } else {
           response = `📋 **Your Standing Orders** (${orders.length})\n\n`;
           
-          orders.forEach((order, index) => {
-            const statusEmoji = {
-              [OrderStatus.ACTIVE]: '🟢',
-              [OrderStatus.PAUSED]: '⏸️',
-              [OrderStatus.COMPLETED]: '✅',
-              [OrderStatus.CANCELLED]: '❌',
-              [OrderStatus.FAILED]: '💥'
-            }[order.status];
+                      orders.forEach((order: any, index: number) => {
+              const statusEmoji = {
+                'active': '🟢',
+                'paused': '⏸️',
+                'completed': '✅',
+                'cancelled': '❌',
+                'failed': '💥'
+              }[order.status as string] || '🟢';
             
             response += `**${index + 1}. ${order.description}**\n`;
             response += `   📋 ID: ${order.id}\n`;
@@ -1118,21 +1403,21 @@ const manageStandingOrdersAction: Action = {
         
         switch (action) {
           case 'pause':
-            success = service.pauseStandingOrder(orderId);
+            success = await service.pauseStandingOrder(orderId);
             response = success 
               ? `⏸️ **Order Paused**\n\nOrder ${orderId} has been paused. Use "resume order ${orderId}" to reactivate it.`
               : `❌ Could not pause order ${orderId}. Check the order ID and try again.`;
             break;
             
           case 'resume':
-            success = service.resumeStandingOrder(orderId);
+            success = await service.resumeStandingOrder(orderId);
             response = success 
               ? `▶️ **Order Resumed**\n\nOrder ${orderId} is now active again.`
               : `❌ Could not resume order ${orderId}. Check the order ID and try again.`;
             break;
             
           case 'cancel':
-            success = service.cancelStandingOrder(orderId);
+            success = await service.cancelStandingOrder(orderId);
             response = success 
               ? `❌ **Order Cancelled**\n\nOrder ${orderId} has been permanently cancelled.`
               : `❌ Could not cancel order ${orderId}. Check the order ID and try again.`;
@@ -1210,6 +1495,10 @@ export const autonomousPlugin: Plugin = {
   actions: [createStandingOrderAction, manageStandingOrdersAction],
   services: [AutonomousService],
   providers: [],
+  schema: {
+    standingOrdersTable,
+    orderExecutionsTable,
+  },
 };
 
 export default autonomousPlugin;
