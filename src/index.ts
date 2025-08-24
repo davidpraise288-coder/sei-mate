@@ -1,6 +1,5 @@
 import { logger, type IAgentRuntime, type Project, type ProjectAgent } from '@elizaos/core';
 import { seiSwapPlugin } from './swap.ts';
-import { seiNFTPlugin } from './nft.ts';
 import { seiGovernancePlugin } from './gov.ts';
 import { notificationPlugin } from './notification.ts';
 import { seiPerpetualTradingPlugin } from './trade.ts';
@@ -17,7 +16,6 @@ export const projectAgent: ProjectAgent = {
   init: async (runtime: IAgentRuntime) => await initCharacter({ runtime }),
   plugins: [
     seiSwapPlugin, 
-    seiNFTPlugin, 
     seiGovernancePlugin, 
     notificationPlugin, 
     seiPerpetualTradingPlugin
