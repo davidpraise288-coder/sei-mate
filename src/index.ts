@@ -3,6 +3,7 @@ import { seiSwapPlugin } from './swap.ts';
 import { seiGovernancePlugin } from './gov.ts';
 import { notificationPlugin } from './notification.ts';
 import { seiPerpetualTradingPlugin } from './trade.ts';
+import { proposalSummaryPlugin } from './proposal-summary.ts';
 import { character } from './character.ts';
 import { ProjectStarterTestSuite } from './__tests__/e2e/project-starter.e2e.ts';
 
@@ -18,7 +19,8 @@ export const projectAgent: ProjectAgent = {
     seiSwapPlugin, 
     seiGovernancePlugin, 
     notificationPlugin, 
-    seiPerpetualTradingPlugin
+    seiPerpetualTradingPlugin,
+    proposalSummaryPlugin
   ], 
   tests: [ProjectStarterTestSuite], // Export tests from ProjectAgent
 };
