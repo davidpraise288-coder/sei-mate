@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![SEI Mate Banner](https://elizaos.github.io/eliza-avatars/Eliza/portrait.png)
+![SEI Mate Banner]([https://ibb.co/67F7p5rv])
 
 **🏆 AI Acceleration Hackathon 2025 - Consumer Agents Track**  
 *Powered by AIDN - Building AI Agents for Mainstream Consumer Platforms*
