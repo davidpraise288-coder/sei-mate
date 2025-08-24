@@ -46,7 +46,7 @@ const seiMainnet = {
  */
 const configSchema = z.object({
   SEI_PRIVATE_KEY: z.string().min(1, 'SEI private key is required'),
-  SEI_RPC_URL: z.string().url().default('https://evm-rpc.sei-apis.com'),
+  TRADE_RPC_URL: z.string().url().default('https://evm-rpc.sei-apis.com'),
   SEI_CITREX_ENVIRONMENT: z.enum(['mainnet', 'testnet']).default('mainnet'),
   SEI_SUB_ACCOUNT_ID: z.number().default(0),
 });
@@ -127,7 +127,7 @@ export class SeiPerpetualTradingService extends Service {
     super(runtime);
     
     this.privateKey = process.env.SEI_PRIVATE_KEY || '';
-    this.rpcUrl = process.env.SEI_RPC_URL || 'https://evm-rpc.sei-apis.com';
+    this.rpcUrl = process.env.TRADE_RPC_URL || 'https://evm-rpc.sei-apis.com';
     this.environment = (process.env.SEI_CITREX_ENVIRONMENT as 'mainnet' | 'testnet') || 'mainnet';
     this.subAccountId = parseInt(process.env.SEI_SUB_ACCOUNT_ID || '0');
     
