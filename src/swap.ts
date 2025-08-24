@@ -56,7 +56,7 @@ const seiMainnet = {
  */
 const configSchema = z.object({
   SEI_PRIVATE_KEY: z.string().min(1, 'SEI private key is required'),
-  SEI_RPC_URL: z.string().url().default('https://evm-rpc.sei-apis.com'),
+  SWAP_RPC_URL: z.string().url().default('https://evm-rpc.sei-apis.com'),
   SEI_SLIPPAGE_TOLERANCE: z.string().default('1.0'),
 });
 
@@ -100,7 +100,7 @@ export class SeiSwapService extends Service {
 
   constructor(runtime?: IAgentRuntime) {
     super(runtime);
-    this.rpcUrl = process.env.SEI_RPC_URL || 'https://evm-rpc.sei-apis.com';
+    this.rpcUrl = process.env.SWAP_RPC_URL || 'https://evm-rpc.sei-apis.com';
     this.slippageTolerance = process.env.SEI_SLIPPAGE_TOLERANCE || '1.0';
     
     // Initialize wallet client with private key
